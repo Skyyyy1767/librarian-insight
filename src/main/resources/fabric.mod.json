@@ -1,29 +1,25 @@
 {
 	"schemaVersion": 1,
-	"id": "visible-librarian-trades",
+	"id": "librarian_insight",
 	"version": "${version}",
-	"name": "Visible Librarian Trades",
-    "description": "Client-side Minecraft 26.2 display of nearby librarian enchanted-book trades on lecterns.",
+	"name": "Librarian Insight",
+    "description": "Displays nearby librarian enchanted-book trades on lecterns and provides detailed librarian insight without changing gameplay.",
 	"authors": [
-        "Saphjyr"
+        "Librarian Insight contributors"
     ],
     "contributors": [
-        "Minecraft 26.2 port"
+        "Saphjyr (original Visible Librarian Trades author)"
     ],
-	"contact": {
-        "homepage": "https://www.curseforge.com/minecraft/mc-mods/visible-librarian-trades",
-        "sources": "https://github.com/Saphjyr/visible-librarian-trades"
-	},
     "license": "MIT",
-	"icon": "assets/visible-librarian-trades/icon.png",
+	"icon": "assets/librarian_insight/icon.png",
 	"environment": "*",
 	"entrypoints": {
         "client": [
-			"name.modid.VisibleLibrarianTrades"
+			"librarianinsight.LibrarianInsight"
 		]
 	},
 	"mixins": [
-		"visible-librarian-trades.mixins.json"
+		"librarian_insight.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.19.3",

@@ -10,4 +10,4 @@ pluginManagement {
 }
 
 // Should match your modid
-rootProject.name = 'visible-librarian-trades'
+rootProject.name = 'librarian-insight'

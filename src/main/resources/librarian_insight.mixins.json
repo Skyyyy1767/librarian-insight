@@ -1,0 +1,28 @@
+{
+	"required": true,
+	"package": "librarianinsight.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"VillagerAccessor",
+		"AbstractVillagerAccessor"
+	],
+
+    "client": [
+        "BlockEntityRenderDispatcherMixin",
+        "ClientPacketListenerMixin",
+        "BlockMixin",
+        "VillagerRenderStateMixin",
+        "VillagerRendererMixin",
+        "RenderLayerInvoker",
+        "VillagerProfessionLayerMixin",
+        "MerchantScreenAccessor"
+	],
+
+	"injectors": {
+		"defaultRequire": 1
+	},
+
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
