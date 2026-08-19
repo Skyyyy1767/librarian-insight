@@ -86,7 +86,9 @@ public final class EnchantmentManager {
         Minecraft minecraft = Minecraft.getInstance();
         long gameTime = minecraft.level == null ? 0L : minecraft.level.getGameTime();
         offerSnapshots.put(currentVillager.getUUID(), new KnownLibrarianSnapshot(
-                currentVillager.getUUID(), offers, villagerLevel, villagerXp,
+                currentVillager.getUUID(), offers,
+                currentVillager.getVillagerData().type().unwrapKey(),
+                villagerLevel, villagerXp,
                 showProgress, canRestock, gameTime
         ));
     }

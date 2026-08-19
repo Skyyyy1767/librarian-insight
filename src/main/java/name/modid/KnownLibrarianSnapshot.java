@@ -1,6 +1,9 @@
 package name.modid;
 
 import java.util.UUID;
+import java.util.Optional;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.entity.npc.villager.VillagerType;
 import net.minecraft.world.item.trading.MerchantOffers;
 
 /**
@@ -10,6 +13,7 @@ import net.minecraft.world.item.trading.MerchantOffers;
 public final class KnownLibrarianSnapshot {
     private final UUID villagerUuid;
     private final MerchantOffers offers;
+    private final Optional<ResourceKey<VillagerType>> villagerType;
     private final int villagerLevel;
     private final int villagerXp;
     private final boolean showProgress;
@@ -19,6 +23,7 @@ public final class KnownLibrarianSnapshot {
     public KnownLibrarianSnapshot(
             UUID villagerUuid,
             MerchantOffers offers,
+            Optional<ResourceKey<VillagerType>> villagerType,
             int villagerLevel,
             int villagerXp,
             boolean showProgress,
@@ -27,6 +32,7 @@ public final class KnownLibrarianSnapshot {
     ) {
         this.villagerUuid = villagerUuid;
         this.offers = offers.copy();
+        this.villagerType = Optional.ofNullable(villagerType).orElseGet(Optional::empty);
         this.villagerLevel = villagerLevel;
         this.villagerXp = villagerXp;
         this.showProgress = showProgress;
@@ -41,6 +47,10 @@ public final class KnownLibrarianSnapshot {
     /** Returns a deep copy so the cached packet state cannot be mutated by a screen. */
     public MerchantOffers offersCopy() {
         return offers.copy();
+    }
+
+    public Optional<ResourceKey<VillagerType>> villagerType() {
+        return villagerType;
     }
 
     public int villagerLevel() {
