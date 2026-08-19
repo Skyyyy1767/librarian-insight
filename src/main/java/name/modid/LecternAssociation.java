@@ -12,7 +12,9 @@ public record LecternAssociation(UUID villagerUuid, Confidence confidence) {
         /** A unique librarian work sound and unique workstation candidate agreed. */
         WORK_OBSERVED("Observed at this workstation", 2),
         /** Event 14, a profession transition, and one claim candidate agreed. */
-        CLAIM_OBSERVED("Observed claim", 3);
+        CLAIM_OBSERVED("Observed claim", 3),
+        /** Authoritative JOB_SITE memory read on the integrated-server thread. */
+        SERVER_CONFIRMED("Confirmed by integrated server", 4);
 
         private final String description;
         private final int strength;

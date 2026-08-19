@@ -205,6 +205,11 @@ public final class LecternManager {
         return ambiguousLecterns.contains(pos);
     }
 
+    /** Installs an authoritative single-player JOB_SITE association on the client thread. */
+    public void confirmIntegratedServerAssociation(BlockPos pos, UUID villagerUuid) {
+        bind(pos, villagerUuid, LecternAssociation.Confidence.SERVER_CONFIRMED);
+    }
+
     public void invalidateVillager(UUID villagerUuid) {
         BlockPos associatedLectern = lecternByVillager.remove(villagerUuid);
         if (associatedLectern != null) {

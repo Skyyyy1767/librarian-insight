@@ -1,6 +1,7 @@
 package name.modid;
 
 import name.modid.client.LibrarianInfoMenu;
+import name.modid.client.IntegratedVillagerStatusService;
 import name.modid.client.MerchantScreenOverlay;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -18,6 +19,7 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
     public static EnchantmentManager enchantmentManager;
     public static LecternManager lecternManager;
     public static PriceDisplayConfig priceDisplay;
+    public static IntegratedVillagerStatusService villagerStatusService;
     public static boolean displayIcons;
 
     @Override
@@ -25,6 +27,7 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
         priceDisplay = new PriceDisplayConfig();
         enchantmentManager = new EnchantmentManager();
         lecternManager = new LecternManager();
+        villagerStatusService = new IntegratedVillagerStatusService();
         LibrarianInfoMenu.register();
         MerchantScreenOverlay.register();
         registerCommands();
