@@ -3,26 +3,33 @@ package name.modid;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.IdentityHashMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.item.trading.MerchantOffers;
 
 /** Preserves the original mod's client-side trade-query queue. */
 public final class EnchantmentManager {
     private final Map<Villager, @Nullable EnchantmentInfo> enchantments = new IdentityHashMap<>();
     private final Set<Villager> resolved = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final Queue<Villager> queryQueue = new ArrayDeque<>();
+    private final Map<UUID, KnownLibrarianSnapshot> offerSnapshots = new HashMap<>();
     private @Nullable Villager currentVillager;
     private @Nullable Villager previousVillager;
+    private int expectedMerchantContainerId = -1;
+    private @Nullable ClientLevel trackedLevel;
     private boolean needsCleanup;
     private int clock;
 
@@ -50,7 +57,42 @@ public final class EnchantmentManager {
             enchantments.put(currentVillager, enchantment);
             resolved.add(currentVillager);
             currentVillager = null;
+            expectedMerchantContainerId = -1;
         }
+    }
+
+    /** Associates the next offer packet with the serialized background query. */
+    public void expectMerchantContainer(int containerId) {
+        if (currentVillager != null) {
+            expectedMerchantContainerId = containerId;
+        }
+    }
+
+    public boolean acceptsMerchantPacket(int containerId) {
+        return currentVillager != null && expectedMerchantContainerId == containerId;
+    }
+
+    /** Captures every currently unlocked offer without changing the legacy extraction path. */
+    public void snapshotCurrentOffers(
+            MerchantOffers offers,
+            int villagerLevel,
+            int villagerXp,
+            boolean showProgress,
+            boolean canRestock
+    ) {
+        if (currentVillager == null) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        long gameTime = minecraft.level == null ? 0L : minecraft.level.getGameTime();
+        offerSnapshots.put(currentVillager.getUUID(), new KnownLibrarianSnapshot(
+                currentVillager.getUUID(), offers, villagerLevel, villagerXp,
+                showProgress, canRestock, gameTime
+        ));
+    }
+
+    public @Nullable KnownLibrarianSnapshot getOfferSnapshot(UUID villagerUuid) {
+        return offerSnapshots.get(villagerUuid);
     }
 
     public @Nullable EnchantmentInfo getEnchant(Villager villager) {
@@ -70,10 +112,15 @@ public final class EnchantmentManager {
             reset();
             return;
         }
+        if (trackedLevel != minecraft.level) {
+            reset();
+            trackedLevel = minecraft.level;
+        }
 
         if (clock % 40 == 0) {
             if (currentVillager != null && currentVillager == previousVillager) {
                 currentVillager = null;
+                expectedMerchantContainerId = -1;
             }
             previousVillager = currentVillager;
             discoverNearbyLibrarians(minecraft);
@@ -124,18 +171,46 @@ public final class EnchantmentManager {
     }
 
     private void clean() {
+        Set<UUID> invalidUuids = new java.util.HashSet<>();
+        for (Villager villager : enchantments.keySet()) {
+            if (!villager.isAlive()
+                    || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                invalidUuids.add(villager.getUUID());
+            }
+        }
         enchantments.keySet().removeIf(villager -> !villager.isAlive()
                 || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN));
+        invalidUuids.forEach(offerSnapshots::remove);
+        if (VisibleLibrarianTrades.lecternManager != null) {
+            invalidUuids.forEach(VisibleLibrarianTrades.lecternManager::invalidateVillager);
+        }
         resolved.removeIf(villager -> !enchantments.containsKey(villager));
         queryQueue.removeIf(villager -> !villager.isAlive());
+    }
+
+    public void invalidateVillager(UUID villagerUuid) {
+        enchantments.keySet().removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        resolved.removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        queryQueue.removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        offerSnapshots.remove(villagerUuid);
+        if (currentVillager != null && currentVillager.getUUID().equals(villagerUuid)) {
+            currentVillager = null;
+            expectedMerchantContainerId = -1;
+        }
+        if (previousVillager != null && previousVillager.getUUID().equals(villagerUuid)) {
+            previousVillager = null;
+        }
     }
 
     public void reset() {
         enchantments.clear();
         resolved.clear();
         queryQueue.clear();
+        offerSnapshots.clear();
         currentVillager = null;
         previousVillager = null;
+        expectedMerchantContainerId = -1;
+        trackedLevel = null;
         clock = 0;
     }
 }

@@ -7,7 +7,9 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
 import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.inventory.MenuType;
@@ -29,9 +31,16 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleMerchantOffers", at = @At("HEAD"))
     private void visibleLibrarianTrades$handleMerchantOffers(ClientboundMerchantOffersPacket packet, CallbackInfo ci) {
         EnchantmentManager manager = VisibleLibrarianTrades.enchantmentManager;
-        if (!manager.isWaitingForPacket()) {
+        if (!manager.acceptsMerchantPacket(packet.getContainerId())) {
             return;
         }
+        manager.snapshotCurrentOffers(
+                packet.getOffers(),
+                packet.getVillagerLevel(),
+                packet.getVillagerXp(),
+                packet.showProgress(),
+                packet.canRestock()
+        );
         EnchantmentInfo found = null;
         findEnchantedBook:
         for (MerchantOffer offer : packet.getOffers()) {
@@ -66,6 +75,7 @@ public abstract class ClientPacketListenerMixin {
     @Inject(method = "handleOpenScreen", at = @At("HEAD"), cancellable = true)
     private void visibleLibrarianTrades$closeTrackedMerchant(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
         if (VisibleLibrarianTrades.enchantmentManager.isWaitingForPacket() && packet.getType() == MenuType.MERCHANT) {
+            VisibleLibrarianTrades.enchantmentManager.expectMerchantContainer(packet.getContainerId());
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.getConnection() != null) {
                 minecraft.getConnection().send(new ServerboundContainerClosePacket(packet.getContainerId()));
@@ -80,8 +90,18 @@ public abstract class ClientPacketListenerMixin {
         if (minecraft.level != null && packet.getEventId() == 14) {
             Entity entity = packet.getEntity(minecraft.level);
             if (entity instanceof Villager villager) {
+                VisibleLibrarianTrades.lecternManager.noteVillagerEvent(villager);
                 VisibleLibrarianTrades.enchantmentManager.queueVillager(villager);
             }
+        }
+    }
+
+    @Inject(method = "handleSoundEvent", at = @At("HEAD"))
+    private void visibleLibrarianTrades$observeLibrarianWork(ClientboundSoundPacket packet, CallbackInfo ci) {
+        if (packet.getSound().value() == SoundEvents.VILLAGER_WORK_LIBRARIAN) {
+            VisibleLibrarianTrades.lecternManager.noteLibrarianWorkSound(
+                    packet.getX(), packet.getY(), packet.getZ()
+            );
         }
     }
 }
