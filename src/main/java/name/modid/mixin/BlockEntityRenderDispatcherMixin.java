@@ -83,7 +83,7 @@ public class BlockEntityRenderDispatcherMixin {
                     false,
                     Font.DisplayMode.NORMAL,
                     lecternState.lightCoords,
-                    display.maxed() ? 0xFFFFFFFF : 0xFF000000,
+                    VisibleLibrarianTrades.priceDisplay.getTextColor().argb(),
                     0,
                     display.maxed() ? 0xFFFF8800 : 0xFFFFFFFF
             );

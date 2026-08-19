@@ -9,11 +9,13 @@ import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 import net.fabricmc.loader.api.FabricLoader;
 
-/** Small dependency-free client setting for the lectern price row. */
+/** Small dependency-free client settings for lectern presentation. */
 public final class PriceDisplayConfig {
-    private static final String KEY = "showPrice";
+    private static final String PRICE_KEY = "showPrice";
+    private static final String TEXT_COLOR_KEY = "textColor";
     private final Path path;
     private boolean enabled = true;
+    private LecternTextColor textColor = LecternTextColor.BLACK;
 
     public PriceDisplayConfig() {
         this(FabricLoader.getInstance().getConfigDir().resolve("visible-librarian-trades.properties"));
@@ -37,6 +39,15 @@ public final class PriceDisplayConfig {
         setEnabled(!enabled);
     }
 
+    public LecternTextColor getTextColor() {
+        return textColor;
+    }
+
+    public void setTextColor(LecternTextColor textColor) {
+        this.textColor = textColor;
+        save();
+    }
+
     private void load() {
         if (!Files.isRegularFile(path)) {
             return;
@@ -44,7 +55,9 @@ public final class PriceDisplayConfig {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(path)) {
             properties.load(input);
-            enabled = Boolean.parseBoolean(properties.getProperty(KEY, "true"));
+            enabled = Boolean.parseBoolean(properties.getProperty(PRICE_KEY, "true"));
+            textColor = LecternTextColor.parse(properties.getProperty(TEXT_COLOR_KEY))
+                    .orElse(LecternTextColor.BLACK);
         } catch (IOException exception) {
             VisibleLibrarianTrades.LOGGER.warn("Could not read price display config {}; using default ON", path, exception);
         }
@@ -52,7 +65,8 @@ public final class PriceDisplayConfig {
 
     private void save() {
         Properties properties = new Properties();
-        properties.setProperty(KEY, Boolean.toString(enabled));
+        properties.setProperty(PRICE_KEY, Boolean.toString(enabled));
+        properties.setProperty(TEXT_COLOR_KEY, textColor.commandName());
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Files.createDirectories(path.getParent());

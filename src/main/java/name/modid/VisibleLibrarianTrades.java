@@ -32,11 +32,24 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
 
     private static void registerCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                literal("vlt").then(literal("price")
-                        .executes(context -> updatePriceSetting(context.getSource(), null))
-                        .then(literal("on").executes(context -> updatePriceSetting(context.getSource(), true)))
-                        .then(literal("off").executes(context -> updatePriceSetting(context.getSource(), false))))
+                literal("vlt")
+                        .then(literal("price")
+                                .executes(context -> updatePriceSetting(context.getSource(), null))
+                                .then(literal("on").executes(context -> updatePriceSetting(context.getSource(), true)))
+                                .then(literal("off").executes(context -> updatePriceSetting(context.getSource(), false))))
+                        .then(colorCommand())
         ));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> colorCommand() {
+        var command = literal("color");
+        for (LecternTextColor color : LecternTextColor.values()) {
+            command.then(literal(color.commandName())
+                    .executes(context -> updateTextColor(context.getSource(), color, false)));
+        }
+        return command.then(literal("reset")
+                .executes(context -> updateTextColor(context.getSource(), LecternTextColor.BLACK, true)));
     }
 
     private static int updatePriceSetting(
@@ -48,7 +61,20 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
         } else {
             priceDisplay.setEnabled(enabled);
         }
-        source.sendFeedback(Component.literal("Lectern price display: " + (priceDisplay.isEnabled() ? "ON" : "OFF")));
+        source.sendFeedback(Component.literal("Price display " + (priceDisplay.isEnabled() ? "enabled." : "disabled.")));
+        return 1;
+    }
+
+    private static int updateTextColor(
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source,
+            LecternTextColor color,
+            boolean reset
+    ) {
+        priceDisplay.setTextColor(color);
+        String message = reset
+                ? "Text color reset to Black."
+                : "Text color set to " + color.displayName() + ".";
+        source.sendFeedback(Component.literal(message));
         return 1;
     }
 }
