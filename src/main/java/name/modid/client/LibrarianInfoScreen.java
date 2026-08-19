@@ -8,6 +8,8 @@ import java.util.UUID;
 import name.modid.KnownLibrarianSnapshot;
 import name.modid.LecternAssociation;
 import name.modid.VisibleLibrarianTrades;
+import name.modid.status.VillagerStatusCalculations;
+import name.modid.status.VillagerStatusSnapshot;
 import name.modid.trade.LibrarianEnchantedBookReference;
 import name.modid.trade.LibrarianMinimumPrice;
 import name.modid.trade.LibrarianTradeCatalog;
@@ -19,10 +21,16 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerData;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
+import net.minecraft.world.level.block.Blocks;
 import org.jspecify.annotations.Nullable;
 
 /** Icon-first, read-only librarian reference browser for an empty lectern. */
@@ -51,18 +59,34 @@ public final class LibrarianInfoScreen extends Screen {
     private int currentDetailMaxScroll;
     private int possibleDetailMaxScroll;
     private int possibleGridMaxScroll;
+    private int statusScroll;
+    private int statusMaxScroll;
+    private int statusDetailScroll;
+    private int statusDetailMaxScroll;
     private @Nullable Rect activeDetailBounds;
     private @Nullable Rect activePossibleGridBounds;
+    private @Nullable Rect activeStatusBounds;
     private @Nullable Rect activeClickClip;
     private @Nullable Rect activeTooltipClip;
     private @Nullable KnownLibrarianSnapshot cachedSnapshot;
     private MerchantOffers cachedOffers = new MerchantOffers();
     private @Nullable UUID refreshRequestedFor;
     private long refreshRequestedAt = Long.MIN_VALUE;
+    private @Nullable StatusCard selectedStatusCard;
+    private IntegratedVillagerStatusService.Result statusResult;
+    private boolean statusRequestInFlight;
+    private long statusRequestGeneration;
+    private long lastStatusRequestAt = Long.MIN_VALUE;
 
     public LibrarianInfoScreen(BlockPos lecternPos) {
         super(Component.literal("Visible Librarian Trades"));
         this.lecternPos = lecternPos.immutable();
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        requestStatusSnapshot(true);
     }
 
     @Override
@@ -72,11 +96,14 @@ public final class LibrarianInfoScreen extends Screen {
         hitTargets.clear();
         activeDetailBounds = null;
         activePossibleGridBounds = null;
+        activeStatusBounds = null;
         activeClickClip = null;
         activeTooltipClip = null;
         currentDetailMaxScroll = 0;
         possibleDetailMaxScroll = 0;
         possibleGridMaxScroll = 0;
+        statusMaxScroll = 0;
+        statusDetailMaxScroll = 0;
 
         Layout layout = layout();
         graphics.fill(layout.x(), layout.y(), layout.right(), layout.bottom(), palette.screenBackground());
@@ -87,13 +114,16 @@ public final class LibrarianInfoScreen extends Screen {
                 1, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.headingText());
 
         int tabY = layout.y() + 21;
-        int tabWidth = Math.max(1, (layout.width() - 12) / 2);
+        int tabWidth = Math.max(1, (layout.width() - 14) / 3);
         Rect currentTab = new Rect(layout.x() + 5, tabY, tabWidth, 17);
-        Rect possibleTab = new Rect(currentTab.right() + 2, tabY, layout.right() - currentTab.right() - 7, 17);
+        Rect possibleTab = new Rect(currentTab.right() + 2, tabY, tabWidth, 17);
+        Rect statusTab = new Rect(possibleTab.right() + 2, tabY, layout.right() - possibleTab.right() - 7, 17);
         drawTab(graphics, currentTab, "Current Librarian", tab == Tab.CURRENT, mouseX, mouseY,
                 () -> switchTab(Tab.CURRENT));
         drawTab(graphics, possibleTab, "Possible Trades", tab == Tab.POSSIBLE, mouseX, mouseY,
                 () -> switchTab(Tab.POSSIBLE));
+        drawTab(graphics, statusTab, "Villager Status", tab == Tab.STATUS, mouseX, mouseY,
+                () -> switchTab(Tab.STATUS));
 
         Rect content = new Rect(
                 layout.x() + 5,
@@ -101,10 +131,10 @@ public final class LibrarianInfoScreen extends Screen {
                 layout.width() - 10,
                 layout.height() - HEADER_HEIGHT - FOOTER_HEIGHT
         );
-        if (tab == Tab.CURRENT) {
-            drawCurrentTab(graphics, content, mouseX, mouseY);
-        } else {
-            drawPossibleTab(graphics, content, mouseX, mouseY);
+        switch (tab) {
+            case CURRENT -> drawCurrentTab(graphics, content, mouseX, mouseY);
+            case POSSIBLE -> drawPossibleTab(graphics, content, mouseX, mouseY);
+            case STATUS -> drawStatusTab(graphics, content, mouseX, mouseY);
         }
 
         drawFittedText(graphics, "Read-only • no trades are changed",
@@ -190,6 +220,356 @@ public final class LibrarianInfoScreen extends Screen {
         graphics.disableScissor();
         drawScrollbar(graphics, rows, cachedOffers.size(), visibleRows, currentScroll);
         drawCurrentDetail(graphics, detail, cachedOffers.get(selectedCurrent), snapshot, association, mouseX, mouseY);
+    }
+
+    private void drawStatusTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+        requestStatusSnapshot(false);
+        panel(graphics, content);
+        if (selectedStatusCard == null) {
+            drawStatusDashboard(graphics, content, mouseX, mouseY);
+        } else {
+            drawStatusDetail(graphics, content, selectedStatusCard, mouseX, mouseY);
+        }
+    }
+
+    private void drawStatusDashboard(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+        drawFittedText(graphics, "Villager Status",
+                new Rect(content.x() + 6, content.y() + 3, content.width() - 12, 13),
+                1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+        Rect viewport = new Rect(content.x() + 3, content.y() + 19, content.width() - 6, content.height() - 22);
+        activeStatusBounds = viewport;
+        int gap = 4;
+        int columns = 2;
+        int cardWidth = Math.max(1, (viewport.width() - gap - 3) / columns);
+        int cardHeight = 61;
+        StatusCard[] cards = StatusCard.values();
+        int rows = (cards.length + columns - 1) / columns;
+        int totalHeight = rows * (cardHeight + gap) - gap;
+        statusMaxScroll = Math.max(0, totalHeight - viewport.height());
+        statusScroll = clamp(statusScroll, 0, statusMaxScroll);
+
+        graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
+        activeTooltipClip = viewport;
+        for (int index = 0; index < cards.length; index++) {
+            StatusCard card = cards[index];
+            int column = index % columns;
+            int row = index / columns;
+            Rect box = new Rect(
+                    viewport.x() + column * (cardWidth + gap),
+                    viewport.y() + row * (cardHeight + gap) - statusScroll,
+                    cardWidth,
+                    cardHeight
+            );
+            Rect visible = intersection(box, viewport);
+            boolean hovered = visible != null && visible.contains(mouseX, mouseY);
+            graphics.fill(box.x(), box.y(), box.right(), box.bottom(),
+                    hovered ? palette.hovered() : palette.clickableBox());
+            graphics.outline(box.x(), box.y(), box.width(), box.height(),
+                    hovered ? palette.selectedBorder() : palette.separator());
+            drawFittedText(graphics, card.title,
+                    new Rect(box.x() + 3, box.y() + 3, box.width() - 6, 12),
+                    1, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.headingText());
+            drawIcon(graphics, statusIcon(card), box.x() + 5, box.y() + 24, mouseX, mouseY, false);
+            CardSummary summary = statusSummary(card);
+            drawFittedText(graphics, summary.text(),
+                    new Rect(box.x() + 25, box.y() + 17, box.width() - 29, box.height() - 20),
+                    4, MIN_TEXT_SCALE, TextAlignment.LEFT, true, toneColor(summary.tone()));
+            if (visible != null) {
+                hitTargets.add(new HitTarget(visible, () -> {
+                    selectedStatusCard = card;
+                    statusDetailScroll = 0;
+                }));
+            }
+        }
+        activeTooltipClip = null;
+        graphics.disableScissor();
+        drawPixelScrollbar(graphics, viewport, totalHeight, statusScroll);
+    }
+
+    private void drawStatusDetail(
+            GuiGraphicsExtractor graphics,
+            Rect content,
+            StatusCard card,
+            int mouseX,
+            int mouseY
+    ) {
+        Rect back = new Rect(content.x() + 4, content.y() + 3, 44, 18);
+        drawSmallButton(graphics, back, "Back", false, mouseX, mouseY, () -> {
+            selectedStatusCard = null;
+            statusDetailScroll = 0;
+        });
+        drawFittedText(graphics, card.title,
+                new Rect(back.right() + 5, content.y() + 3, content.right() - back.right() - 10, 18),
+                2, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+
+        Rect viewport = new Rect(content.x() + 5, content.y() + 25, content.width() - 10, content.height() - 30);
+        activeStatusBounds = viewport;
+        List<StatusDetailRow> rows = statusDetailRows(card);
+        List<TextLayout> layouts = new ArrayList<>();
+        int totalHeight = 3;
+        for (StatusDetailRow row : rows) {
+            int textWidth = Math.max(12, viewport.width() - (row.icon().isPresent() ? 23 : 2) - 4);
+            TextLayout layout = planText(row.text(), textWidth, row.heading() ? 2 : 8, MIN_TEXT_SCALE);
+            layouts.add(layout);
+            totalHeight += Math.max(row.icon().isPresent() ? 16 : 0, layout.height()) + 5;
+        }
+        statusDetailMaxScroll = Math.max(0, totalHeight - viewport.height());
+        statusDetailScroll = clamp(statusDetailScroll, 0, statusDetailMaxScroll);
+
+        graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
+        activeTooltipClip = viewport;
+        int y = viewport.y() + 3 - statusDetailScroll;
+        for (int index = 0; index < rows.size(); index++) {
+            StatusDetailRow row = rows.get(index);
+            TextLayout textLayout = layouts.get(index);
+            int textX = viewport.x() + 2;
+            if (row.icon().isPresent()) {
+                drawIcon(graphics, row.icon().get(), textX, y, mouseX, mouseY, true);
+                textX += 23;
+            }
+            int rowHeight = Math.max(row.icon().isPresent() ? 16 : 0, textLayout.height());
+            drawTextLayout(graphics, textLayout,
+                    new Rect(textX, y, viewport.right() - textX - 3, rowHeight),
+                    TextAlignment.LEFT, true, toneColor(row.tone()));
+            y += rowHeight + 5;
+        }
+        activeTooltipClip = null;
+        graphics.disableScissor();
+        drawPixelScrollbar(graphics, viewport, totalHeight, statusDetailScroll);
+    }
+
+    private CardSummary statusSummary(StatusCard card) {
+        VillagerStatusSnapshot snapshot = integratedStatus();
+        LecternAssociation association = statusAssociation();
+        KnownLibrarianSnapshot known = statusKnownSnapshot();
+        return switch (card) {
+            case WORKSTATION -> {
+                if (snapshot != null) {
+                    String owner = snapshot.serverConfirmedOwner() ? "Lectern confirmed" : "Assignment estimated";
+                    yield new CardSummary(owner + "\n" + activityLabel(snapshot),
+                            snapshot.serverConfirmedOwner() ? Tone.SUCCESS : Tone.WARNING);
+                }
+                yield association == null
+                        ? new CardSummary("No assigned villager yet", Tone.WARNING)
+                        : new CardSummary(association.confidence().description(),
+                                association.confidence() == LecternAssociation.Confidence.FALLBACK ? Tone.WARNING : Tone.NORMAL);
+            }
+            case HEALTH -> {
+                float[] health = statusHealth(snapshot, association);
+                yield health == null
+                        ? new CardSummary("Health unavailable", Tone.MUTED)
+                        : new CardSummary(formatNumber(health[0]) + " / " + formatNumber(health[1]),
+                                health[0] >= health[1] ? Tone.SUCCESS : Tone.NORMAL);
+            }
+            case RESTOCK -> snapshot == null
+                    ? new CardSummary("Server details unavailable", Tone.MUTED)
+                    : new CardSummary(
+                            snapshot.restock().usedToday() + " of 2 used today\n" + restockSummary(snapshot),
+                            restockTone(snapshot.restock().state()));
+            case TRADES -> {
+                int total = snapshot != null ? snapshot.trades().size() : known == null ? 0 : known.offersCopy().size();
+                int available = snapshot != null ? snapshot.availableTrades() : availableOffers(known);
+                int out = Math.max(0, total - available);
+                yield total == 0
+                        ? new CardSummary("Trade data unavailable", Tone.MUTED)
+                        : new CardSummary(total + " total\n" + available + " available - " + out + " out", out > 0 ? Tone.WARNING : Tone.SUCCESS);
+            }
+            case STANDING -> snapshot == null
+                    ? new CardSummary("Reputation unavailable", Tone.MUTED)
+                    : new CardSummary(
+                            standingLabel(snapshot.gossip().reputation()) + " (" + signed(snapshot.gossip().reputation()) + ")\nPrices: "
+                                    + helpingLabel(snapshot.gossip().reputation()),
+                            snapshot.gossip().reputation() > 0 ? Tone.SUCCESS
+                                    : snapshot.gossip().reputation() < 0 ? Tone.DANGER : Tone.NORMAL);
+            case LEVEL -> {
+                int level = snapshot != null ? snapshot.professionLevel() : known == null ? 0 : known.villagerLevel();
+                int xp = snapshot != null ? snapshot.villagerXp() : known == null ? 0 : known.villagerXp();
+                yield level == 0
+                        ? new CardSummary("Level unavailable", Tone.MUTED)
+                        : new CardSummary(levelName(level) + "\n" + (level >= 5 ? "Maximum level" : xp + " / " + VillagerData.getMaxXpPerLevel(level) + " XP"), Tone.NORMAL);
+            }
+            case HERO -> {
+                VillagerStatusSnapshot.Hero hero = snapshot != null ? snapshot.hero() : clientHero();
+                yield hero.active()
+                        ? new CardSummary("Active - Level " + roman(hero.level()) + "\n" + duration(hero) + " remaining", Tone.SUCCESS)
+                        : new CardSummary("Inactive", Tone.MUTED);
+            }
+        };
+    }
+
+    private List<StatusDetailRow> statusDetailRows(StatusCard card) {
+        List<StatusDetailRow> rows = new ArrayList<>();
+        VillagerStatusSnapshot snapshot = integratedStatus();
+        LecternAssociation association = statusAssociation();
+        KnownLibrarianSnapshot known = statusKnownSnapshot();
+        switch (card) {
+            case WORKSTATION -> {
+                rows.add(detail("Workstation", Items.LECTERN.getDefaultInstance(), Tone.HEADING, true));
+                if (snapshot != null) {
+                    rows.add(detail(snapshot.serverConfirmedOwner()
+                            ? "Lectern assigned: Confirmed by the integrated server"
+                            : "Lectern assigned: Estimated from client observations",
+                            null, snapshot.serverConfirmedOwner() ? Tone.SUCCESS : Tone.WARNING, false));
+                    rows.add(detail("Activity: " + activityLabel(snapshot), null, Tone.NORMAL, false));
+                    rows.add(detail(String.format(Locale.ROOT, "Distance to lectern: %.1f blocks", snapshot.distanceToLectern()), null, Tone.NORMAL, false));
+                    rows.add(detail("Within working range: " + yesNo(snapshot.withinWorkingRange()), null,
+                            snapshot.withinWorkingRange() ? Tone.SUCCESS : Tone.WARNING, false));
+                    rows.add(detail("Path accessibility is not tested. Minecraft does not provide a safe, stable yes/no check without changing navigation.",
+                            null, Tone.MUTED, false));
+                } else if (association != null) {
+                    rows.add(detail("Association: " + association.confidence().description(), null,
+                            association.confidence() == LecternAssociation.Confidence.FALLBACK ? Tone.WARNING : Tone.NORMAL, false));
+                    rows.add(detail("Exact server workstation information is unavailable on this server.", null, Tone.MUTED, false));
+                } else {
+                    rows.add(detail("No librarian is currently associated with this lectern.", null, Tone.WARNING, false));
+                }
+            }
+            case HEALTH -> {
+                float[] health = statusHealth(snapshot, association);
+                rows.add(detail("Health", Items.APPLE.getDefaultInstance(), Tone.HEADING, true));
+                if (health == null) {
+                    rows.add(detail("Health is unavailable while the associated villager is not loaded.", null, Tone.MUTED, false));
+                } else {
+                    rows.add(detail(healthHearts(health[0], health[1]), null, health[0] >= health[1] ? Tone.SUCCESS : Tone.NORMAL, false));
+                    rows.add(detail(formatNumber(health[0]) + " / " + formatNumber(health[1]), null, Tone.NORMAL, false));
+                }
+            }
+            case RESTOCK -> addRestockDetails(rows, snapshot);
+            case TRADES -> addTradeDetails(rows, snapshot, known);
+            case STANDING -> addStandingDetails(rows, snapshot, known);
+            case LEVEL -> addLevelDetails(rows, snapshot, known);
+            case HERO -> addHeroDetails(rows, snapshot);
+        }
+        return rows;
+    }
+
+    private void addRestockDetails(List<StatusDetailRow> rows, @Nullable VillagerStatusSnapshot snapshot) {
+        rows.add(detail("Restock Status", Items.CLOCK.getDefaultInstance(), Tone.HEADING, true));
+        if (snapshot == null) {
+            rows.add(detail("Exact restock counters are available in single-player. This remote server does not provide them.", null, Tone.MUTED, false));
+            return;
+        }
+        VillagerStatusSnapshot.Restock restock = snapshot.restock();
+        rows.add(detail(restock.usedToday() + " of 2 used today", null, Tone.NORMAL, false));
+        rows.add(detail(restock.remaining() + " remaining", null, restock.remaining() > 0 ? Tone.SUCCESS : Tone.WARNING, false));
+        rows.add(detail("Status: " + restockSummary(snapshot), null, restockTone(restock.state()), false));
+        if (restock.cooldownTicks() > 0) {
+            rows.add(detail("Cooldown: " + ticksToDuration(restock.cooldownTicks()), null, Tone.WARNING, false));
+        }
+        rows.add(detail(snapshot.tradesNeedingRestock() + " trades need restocking", Items.ENCHANTED_BOOK.getDefaultInstance(), Tone.NORMAL, false));
+        rows.add(detail(snapshot.outOfStockTrades() + " trades are out of stock", null,
+                snapshot.outOfStockTrades() > 0 ? Tone.WARNING : Tone.SUCCESS, false));
+        restock.lastActualRestockGameTime().ifPresent(last -> rows.add(detail(
+                "Last restock: " + ticksToDuration(Math.max(0, snapshot.serverGameTime() - last)) + " ago",
+                null, Tone.MUTED, false)));
+        rows.add(detail("A ready status is not an automatic restock. The villager must still work at its lectern.", null, Tone.MUTED, false));
+    }
+
+    private void addTradeDetails(
+            List<StatusDetailRow> rows,
+            @Nullable VillagerStatusSnapshot snapshot,
+            @Nullable KnownLibrarianSnapshot known
+    ) {
+        rows.add(detail("Trade Availability", Items.ENCHANTED_BOOK.getDefaultInstance(), Tone.HEADING, true));
+        if (snapshot != null && !snapshot.trades().isEmpty()) {
+            rows.add(detail(snapshot.trades().size() + " total - " + snapshot.availableTrades() + " available - "
+                    + snapshot.outOfStockTrades() + " out of stock", null, Tone.NORMAL, false));
+            for (VillagerStatusSnapshot.Trade trade : snapshot.trades()) {
+                String state = trade.outOfStock() ? "Out of stock" : "Available";
+                rows.add(detail(itemName(trade.result()) + "\n" + state + " - Uses: " + trade.uses() + " / " + trade.maximumUses(),
+                        trade.result(), trade.outOfStock() ? Tone.WARNING : Tone.NORMAL, false));
+            }
+            return;
+        }
+        MerchantOffers offers = known == null ? new MerchantOffers() : known.offersCopy();
+        if (offers.isEmpty()) {
+            rows.add(detail("No current trade data is available.", null, Tone.MUTED, false));
+            return;
+        }
+        for (MerchantOffer offer : offers) {
+            rows.add(detail(offerName(offer) + "\n" + (offer.isOutOfStock() ? "Out of stock" : "Available")
+                            + " - Uses: " + offer.getUses() + " / " + offer.getMaxUses(),
+                    offer.getResult(), offer.isOutOfStock() ? Tone.WARNING : Tone.NORMAL, false));
+        }
+    }
+
+    private void addStandingDetails(
+            List<StatusDetailRow> rows,
+            @Nullable VillagerStatusSnapshot snapshot,
+            @Nullable KnownLibrarianSnapshot known
+    ) {
+        rows.add(detail("Player Standing", Items.EMERALD.getDefaultInstance(), Tone.HEADING, true));
+        if (snapshot == null) {
+            rows.add(detail("Exact reputation and gossip are available in single-player but are not sent by this remote server.", null, Tone.MUTED, false));
+            return;
+        }
+        int reputation = snapshot.gossip().reputation();
+        rows.add(detail(standingLabel(reputation) + " - Reputation: " + signed(reputation), null,
+                reputation > 0 ? Tone.SUCCESS : reputation < 0 ? Tone.DANGER : Tone.NORMAL, false));
+        rows.add(detail("Prices: " + helpingLabel(reputation), null,
+                reputation > 0 ? Tone.SUCCESS : reputation < 0 ? Tone.DANGER : Tone.NORMAL, false));
+        rows.add(detail("Reputation details", null, Tone.HEADING, true));
+        rows.add(detail("Major positive: " + snapshot.gossip().value(VillagerStatusSnapshot.GossipKind.MAJOR_POSITIVE), null, Tone.SUCCESS, false));
+        rows.add(detail("Minor positive: " + snapshot.gossip().value(VillagerStatusSnapshot.GossipKind.MINOR_POSITIVE), null, Tone.SUCCESS, false));
+        rows.add(detail("Trading: " + snapshot.gossip().value(VillagerStatusSnapshot.GossipKind.TRADING), null, Tone.SUCCESS, false));
+        rows.add(detail("Minor negative: " + snapshot.gossip().value(VillagerStatusSnapshot.GossipKind.MINOR_NEGATIVE), null, Tone.DANGER, false));
+        rows.add(detail("Major negative: " + snapshot.gossip().value(VillagerStatusSnapshot.GossipKind.MAJOR_NEGATIVE), null, Tone.DANGER, false));
+        rows.add(detail("Price details", null, Tone.HEADING, true));
+        MerchantOffers actual = known == null ? new MerchantOffers() : known.offersCopy();
+        for (int index = 0; index < snapshot.trades().size(); index++) {
+            VillagerStatusSnapshot.Trade trade = snapshot.trades().get(index);
+            VillagerStatusCalculations.PriceResult price = trade.price();
+            int actualCurrent = index < actual.size() && matchingStatusTrade(trade, actual.get(index))
+                    ? actual.get(index).getCostA().getCount()
+                    : price.current();
+            int unknown = actualCurrent - price.current();
+            StringBuilder text = new StringBuilder(itemName(trade.result()))
+                    .append("\nBase: ").append(price.base())
+                    .append(" - Demand: ").append(signed(price.demand()))
+                    .append(" - Reputation: ").append(signed(price.reputation()))
+                    .append(" - Hero: ").append(signed(price.hero()));
+            if (unknown != 0) {
+                text.append(" - Other/unknown: ").append(signed(unknown));
+            }
+            text.append(" - Current: ").append(actualCurrent);
+            rows.add(detail(text.toString(), trade.result(), unknown == 0 ? Tone.NORMAL : Tone.WARNING, false));
+        }
+    }
+
+    private void addLevelDetails(
+            List<StatusDetailRow> rows,
+            @Nullable VillagerStatusSnapshot snapshot,
+            @Nullable KnownLibrarianSnapshot known
+    ) {
+        rows.add(detail("Librarian Level", Items.EXPERIENCE_BOTTLE.getDefaultInstance(), Tone.HEADING, true));
+        int level = snapshot != null ? snapshot.professionLevel() : known == null ? 0 : known.villagerLevel();
+        int xp = snapshot != null ? snapshot.villagerXp() : known == null ? 0 : known.villagerXp();
+        if (level == 0) {
+            rows.add(detail("Level information is unavailable.", null, Tone.MUTED, false));
+        } else if (level >= 5) {
+            rows.add(detail("Master", null, Tone.SUCCESS, false));
+            rows.add(detail("Maximum level", null, Tone.NORMAL, false));
+        } else {
+            int minimum = VillagerData.getMinXpPerLevel(level);
+            int maximum = VillagerData.getMaxXpPerLevel(level);
+            rows.add(detail(levelName(level), null, Tone.NORMAL, false));
+            rows.add(detail(xp + " / " + maximum + " XP\n" + progressBar(xp, minimum, maximum), null, Tone.SUCCESS, false));
+            rows.add(detail("Next: " + levelName(level + 1), null, Tone.MUTED, false));
+        }
+    }
+
+    private void addHeroDetails(List<StatusDetailRow> rows, @Nullable VillagerStatusSnapshot snapshot) {
+        rows.add(detail("Hero of the Village", Items.TOTEM_OF_UNDYING.getDefaultInstance(), Tone.HEADING, true));
+        VillagerStatusSnapshot.Hero hero = snapshot != null ? snapshot.hero() : clientHero();
+        if (!hero.active()) {
+            rows.add(detail("Inactive", null, Tone.MUTED, false));
+            rows.add(detail("When active, this effect helps reduce villager prices.", null, Tone.MUTED, false));
+        } else {
+            rows.add(detail("Active", null, Tone.SUCCESS, false));
+            rows.add(detail("Level " + roman(hero.level()), null, Tone.NORMAL, false));
+            rows.add(detail(duration(hero) + " remaining", null, Tone.NORMAL, false));
+            rows.add(detail("Prices: Helping", Items.EMERALD.getDefaultInstance(), Tone.SUCCESS, false));
+        }
     }
 
     private void drawCurrentDetail(
@@ -644,6 +1024,252 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
+    private void requestStatusSnapshot(boolean force) {
+        if (minecraft.level == null || VisibleLibrarianTrades.villagerStatusService == null) {
+            return;
+        }
+        long now = minecraft.level.getGameTime();
+        if (!force && (statusRequestInFlight || now - lastStatusRequestAt < 20L)) {
+            return;
+        }
+        LecternAssociation retained = VisibleLibrarianTrades.lecternManager.getRetainedAssociation(lecternPos);
+        UUID fallback = retained == null ? null : retained.villagerUuid();
+        Object requestedLevel = minecraft.level;
+        long generation = ++statusRequestGeneration;
+        statusRequestInFlight = true;
+        lastStatusRequestAt = now;
+        VisibleLibrarianTrades.villagerStatusService.request(lecternPos, fallback, result -> {
+            if (generation != statusRequestGeneration
+                    || minecraft.gui.screen() != this
+                    || minecraft.level != requestedLevel
+                    || minecraft.level == null
+                    || !minecraft.level.getBlockState(lecternPos).is(Blocks.LECTERN)) {
+                return;
+            }
+            statusRequestInFlight = false;
+            statusResult = result;
+            VillagerStatusSnapshot snapshot = result.snapshot();
+            if (snapshot != null && snapshot.serverConfirmedOwner()) {
+                VisibleLibrarianTrades.lecternManager.confirmIntegratedServerAssociation(
+                        lecternPos, snapshot.villagerUuid()
+                );
+            }
+        });
+    }
+
+    private @Nullable VillagerStatusSnapshot integratedStatus() {
+        return statusResult == null ? null : statusResult.snapshot();
+    }
+
+    private @Nullable LecternAssociation statusAssociation() {
+        LecternAssociation retained = VisibleLibrarianTrades.lecternManager.getRetainedAssociation(lecternPos);
+        if (retained != null) {
+            return retained;
+        }
+        if (statusResult != null
+                && statusResult.availability() != IntegratedVillagerStatusService.Availability.REMOTE_SERVER
+                && statusResult.availability() != IntegratedVillagerStatusService.Availability.NO_LOADED_OWNER) {
+            return null;
+        }
+        return VisibleLibrarianTrades.lecternManager.getAssociationForMenu(lecternPos);
+    }
+
+    private @Nullable KnownLibrarianSnapshot statusKnownSnapshot() {
+        VillagerStatusSnapshot integrated = integratedStatus();
+        if (integrated != null) {
+            KnownLibrarianSnapshot known = VisibleLibrarianTrades.enchantmentManager.getOfferSnapshot(integrated.villagerUuid());
+            if (known != null) {
+                return known;
+            }
+        }
+        LecternAssociation association = statusAssociation();
+        return association == null
+                ? null
+                : VisibleLibrarianTrades.enchantmentManager.getOfferSnapshot(association.villagerUuid());
+    }
+
+    private @Nullable Villager clientVillager(@Nullable LecternAssociation association) {
+        if (association == null) {
+            return null;
+        }
+        for (Villager villager : VisibleLibrarianTrades.enchantmentManager.getTrackedVillagers()) {
+            if (villager.getUUID().equals(association.villagerUuid()) && villager.isAlive()) {
+                return villager;
+            }
+        }
+        return null;
+    }
+
+    private float @Nullable [] statusHealth(
+            @Nullable VillagerStatusSnapshot snapshot,
+            @Nullable LecternAssociation association
+    ) {
+        if (snapshot != null) {
+            return new float[]{snapshot.health(), snapshot.maximumHealth()};
+        }
+        Villager villager = clientVillager(association);
+        return villager == null ? null : new float[]{villager.getHealth(), villager.getMaxHealth()};
+    }
+
+    private VillagerStatusSnapshot.Hero clientHero() {
+        if (minecraft.player == null) {
+            return VillagerStatusSnapshot.Hero.inactive();
+        }
+        MobEffectInstance effect = minecraft.player.getEffect(MobEffects.HERO_OF_THE_VILLAGE);
+        return effect == null
+                ? VillagerStatusSnapshot.Hero.inactive()
+                : new VillagerStatusSnapshot.Hero(
+                        true, effect.getAmplifier() + 1, effect.getDuration(), effect.isInfiniteDuration()
+                );
+    }
+
+    private static int availableOffers(@Nullable KnownLibrarianSnapshot known) {
+        if (known == null) {
+            return 0;
+        }
+        return (int)known.offersCopy().stream().filter(offer -> !offer.isOutOfStock()).count();
+    }
+
+    private static boolean matchingStatusTrade(VillagerStatusSnapshot.Trade trade, MerchantOffer offer) {
+        if (!ItemStack.isSameItemSameComponents(trade.result(), offer.getResult())
+                || !ItemStack.isSameItemSameComponents(trade.baseCost(), offer.getBaseCostA())) {
+            return false;
+        }
+        Optional<ItemStack> expectedSecond = trade.secondCost();
+        ItemStack actualSecond = offer.getCostB();
+        return expectedSecond.isEmpty()
+                ? actualSecond.isEmpty()
+                : !actualSecond.isEmpty() && ItemStack.isSameItemSameComponents(expectedSecond.get(), actualSecond);
+    }
+
+    private static String activityLabel(VillagerStatusSnapshot snapshot) {
+        if (snapshot.workingAtLectern()) {
+            return "Working at lectern";
+        }
+        return switch (snapshot.activity()) {
+            case WORK -> "Work period";
+            case MEET -> "Meeting";
+            case REST -> "Rest period";
+            case IDLE -> "Idle";
+            case PANIC -> "Panicking";
+            case PRE_RAID -> "Preparing for raid";
+            case RAID -> "Raid activity";
+            case HIDE -> "Hiding";
+            case PLAY -> "Playing";
+            case SLEEPING -> "Sleeping";
+            case UNKNOWN -> "Activity unavailable";
+        };
+    }
+
+    private static String restockSummary(VillagerStatusSnapshot snapshot) {
+        return switch (snapshot.restock().state()) {
+            case NOT_NEEDED -> "No restock needed";
+            case READY_WHEN_WORKS -> "Ready when villager works";
+            case COOLDOWN -> "Waiting for cooldown";
+            case DAILY_LIMIT -> "Daily limit reached";
+            case NO_WORKSTATION -> "Needs an assigned lectern";
+            case MUST_REACH_LECTERN -> "Must reach lectern";
+            case WAITING_FOR_WORK -> "Waiting for work period";
+        };
+    }
+
+    private static Tone restockTone(VillagerStatusCalculations.RestockState state) {
+        return switch (state) {
+            case NOT_NEEDED, READY_WHEN_WORKS -> Tone.SUCCESS;
+            case COOLDOWN, MUST_REACH_LECTERN, WAITING_FOR_WORK -> Tone.WARNING;
+            case DAILY_LIMIT, NO_WORKSTATION -> Tone.DANGER;
+        };
+    }
+
+    private int toneColor(Tone tone) {
+        return switch (tone) {
+            case HEADING -> palette.headingText();
+            case NORMAL -> palette.primaryText();
+            case MUTED -> palette.secondaryText();
+            case SUCCESS -> palette.successText();
+            case WARNING -> palette.warningText();
+            case DANGER -> palette.dangerText();
+        };
+    }
+
+    private static ItemStack statusIcon(StatusCard card) {
+        return switch (card) {
+            case WORKSTATION -> Items.LECTERN.getDefaultInstance();
+            case HEALTH -> Items.APPLE.getDefaultInstance();
+            case RESTOCK -> Items.CLOCK.getDefaultInstance();
+            case TRADES -> Items.ENCHANTED_BOOK.getDefaultInstance();
+            case STANDING -> Items.EMERALD.getDefaultInstance();
+            case LEVEL -> Items.EXPERIENCE_BOTTLE.getDefaultInstance();
+            case HERO -> Items.TOTEM_OF_UNDYING.getDefaultInstance();
+        };
+    }
+
+    private static StatusDetailRow detail(
+            String text,
+            @Nullable ItemStack icon,
+            Tone tone,
+            boolean heading
+    ) {
+        return new StatusDetailRow(text, Optional.ofNullable(icon).map(ItemStack::copy), tone, heading);
+    }
+
+    private static String standingLabel(int reputation) {
+        return reputation > 0 ? "Positive" : reputation < 0 ? "Negative" : "Neutral";
+    }
+
+    private static String helpingLabel(int reputation) {
+        return reputation > 0 ? "Helping" : reputation < 0 ? "Hurting" : "Neutral";
+    }
+
+    private static String signed(int value) {
+        return value > 0 ? "+" + value : Integer.toString(value);
+    }
+
+    private static String yesNo(boolean value) {
+        return value ? "Yes" : "No";
+    }
+
+    private static String formatNumber(float value) {
+        return value == Math.round(value)
+                ? Integer.toString(Math.round(value))
+                : String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    private static String healthHearts(float health, float maximumHealth) {
+        int hearts = Math.max(1, (int)Math.ceil(maximumHealth / 2.0F));
+        int filled = clamp((int)Math.ceil(health / 2.0F), 0, hearts);
+        return "\u2665 ".repeat(filled) + "\u2661 ".repeat(hearts - filled);
+    }
+
+    private static String progressBar(int xp, int minimum, int maximum) {
+        int sections = 16;
+        float progress = maximum <= minimum ? 1.0F : (xp - minimum) / (float)(maximum - minimum);
+        int filled = clamp(Math.round(progress * sections), 0, sections);
+        return "\u2588".repeat(filled) + "\u2591".repeat(sections - filled);
+    }
+
+    private static String ticksToDuration(long ticks) {
+        long totalSeconds = Math.max(0L, ticks / 20L);
+        long minutes = totalSeconds / 60L;
+        long seconds = totalSeconds % 60L;
+        return minutes + "m " + String.format(Locale.ROOT, "%02ds", seconds);
+    }
+
+    private static String duration(VillagerStatusSnapshot.Hero hero) {
+        return hero.infinite() ? "Infinite" : ticksToDuration(hero.remainingTicks());
+    }
+
+    private static String roman(int level) {
+        return switch (level) {
+            case 1 -> "I";
+            case 2 -> "II";
+            case 3 -> "III";
+            case 4 -> "IV";
+            case 5 -> "V";
+            default -> Integer.toString(level);
+        };
+    }
+
     private void drawOfferFlow(
             GuiGraphicsExtractor graphics,
             MerchantOffer offer,
@@ -935,6 +1561,9 @@ public final class LibrarianInfoScreen extends Screen {
         browsingBooks = false;
         currentDetailScroll = 0;
         possibleDetailScroll = 0;
+        if (newTab == Tab.STATUS) {
+            requestStatusSnapshot(false);
+        }
     }
 
     private void selectLevel(int level) {
@@ -976,6 +1605,14 @@ public final class LibrarianInfoScreen extends Screen {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         int direction = scrollY > 0.0 ? -1 : 1;
+        if (tab == Tab.STATUS && activeStatusBounds != null && activeStatusBounds.contains(mouseX, mouseY)) {
+            if (selectedStatusCard == null) {
+                statusScroll = clamp(statusScroll + direction * 16, 0, statusMaxScroll);
+            } else {
+                statusDetailScroll = clamp(statusDetailScroll + direction * 14, 0, statusDetailMaxScroll);
+            }
+            return true;
+        }
         if (activeDetailBounds != null && activeDetailBounds.contains(mouseX, mouseY)) {
             if (tab == Tab.CURRENT) {
                 currentDetailScroll = clamp(currentDetailScroll + direction * 12, 0, currentDetailMaxScroll);
@@ -1008,6 +1645,13 @@ public final class LibrarianInfoScreen extends Screen {
     @Override
     public boolean isInGameUi() {
         return true;
+    }
+
+    @Override
+    public void removed() {
+        statusRequestGeneration++;
+        statusRequestInFlight = false;
+        super.removed();
     }
 
     private LibrarianTradeMode currentMode() {
@@ -1096,7 +1740,33 @@ public final class LibrarianInfoScreen extends Screen {
 
     private enum Tab {
         CURRENT,
-        POSSIBLE
+        POSSIBLE,
+        STATUS
+    }
+
+    private enum StatusCard {
+        WORKSTATION("Workstation & Activity"),
+        HEALTH("Health"),
+        RESTOCK("Restock"),
+        TRADES("Trade Availability"),
+        STANDING("Player Standing & Prices"),
+        LEVEL("Librarian Level"),
+        HERO("Hero of the Village");
+
+        private final String title;
+
+        StatusCard(String title) {
+            this.title = title;
+        }
+    }
+
+    private enum Tone {
+        HEADING,
+        NORMAL,
+        MUTED,
+        SUCCESS,
+        WARNING,
+        DANGER
     }
 
     private enum TextAlignment {
@@ -1109,6 +1779,15 @@ public final class LibrarianInfoScreen extends Screen {
 
         boolean isEmpty() {
             return lines.isEmpty();
+        }
+    }
+
+    private record CardSummary(String text, Tone tone) {
+    }
+
+    private record StatusDetailRow(String text, Optional<ItemStack> icon, Tone tone, boolean heading) {
+        private StatusDetailRow {
+            icon = icon.map(ItemStack::copy);
         }
     }
 

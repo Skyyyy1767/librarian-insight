@@ -201,6 +201,11 @@ public final class LecternManager {
         return associations.get(immutablePos);
     }
 
+    /** Returns learned evidence without creating a nearest-villager fallback. */
+    public @Nullable LecternAssociation getRetainedAssociation(BlockPos pos) {
+        return associations.get(pos);
+    }
+
     public boolean isAssociationAmbiguous(BlockPos pos) {
         return ambiguousLecterns.contains(pos);
     }

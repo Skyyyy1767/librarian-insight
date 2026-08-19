@@ -17,6 +17,9 @@ record LibrarianMenuPalette(
         int separator,
         int associationText,
         int statusText,
+        int successText,
+        int warningText,
+        int dangerText,
         int scrollbarTrack,
         int scrollbarThumb
 ) {
@@ -39,6 +42,9 @@ record LibrarianMenuPalette(
             0xFF8B8B8B,
             0xFF555555,
             0xFF8A5A00,
+            0xFF2E6B36,
+            0xFF8A5A00,
+            0xFF9A2E2E,
             0xFF8B8B8B,
             0xFF3E6F94
     );
@@ -58,6 +64,9 @@ record LibrarianMenuPalette(
             0xFF8B8B8B,
             0xFFB0B0B0,
             0xFFFFD56A,
+            0xFF77D987,
+            0xFFFFD56A,
+            0xFFFF8080,
             0xFF333333,
             0xFFFFD56A
     );

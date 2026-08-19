@@ -146,9 +146,10 @@ public final class IntegratedVillagerStatusService {
                 lecternPos.getY() + 0.5D,
                 lecternPos.getZ() + 0.5D
         ));
-        boolean withinRange = jobSite.isPresent()
+        boolean atActualJobSite = jobSite.isPresent()
                 && jobSite.get().closerToCenterThan(villager.position(), 1.73D);
-        boolean workingAtLectern = villager.getBrain().getRunningBehaviors().stream()
+        boolean withinRange = exactOwner && lecternPos.closerToCenterThan(villager.position(), 1.73D);
+        boolean workingAtLectern = exactOwner && villager.getBrain().getRunningBehaviors().stream()
                 .anyMatch(behavior -> behavior instanceof WorkAtPoi);
         VillagerStatusSnapshot.Activity activity = activityOf(villager);
 
@@ -204,7 +205,7 @@ public final class IntegratedVillagerStatusService {
                         resetPending,
                         needsRestock,
                         jobSite.isPresent(),
-                        withinRange,
+                        atActualJobSite,
                         workActivity
                 )
         );
