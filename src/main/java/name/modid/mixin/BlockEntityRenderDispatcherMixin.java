@@ -32,8 +32,9 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float LINE_SPACING = 10.0F;
     private static final float PRICE_ICON_SIZE = 8.0F;
     private static final float PRICE_ICON_MODEL_SCALE = PRICE_ICON_SIZE * 2.0F;
+    private static final int PRICE_ICON_OVERLAY = OverlayTexture.pack(0.4F, false);
     private static final float ICON_AMOUNT_GAP = 4.0F;
-    private static final float PRICE_GROUP_GAP = 7.0F;
+    private static final float PRICE_GROUP_GAP = 11.0F;
 
     @Inject(method = "submit", at = @At("TAIL"))
     private void submitLecternText(
@@ -168,7 +169,7 @@ public class BlockEntityRenderDispatcherMixin {
         // The protected lectern transform and FIXED item transform invert the two
         // face axes. Compensate locally so asymmetric artwork is upright and readable.
         poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
-        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
+        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, PRICE_ICON_OVERLAY, 0);
         poseStack.popPose();
     }
 
