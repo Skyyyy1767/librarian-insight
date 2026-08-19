@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.blockentity.state.LecternRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -25,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(BlockEntityRenderDispatcher.class)
 public class BlockEntityRenderDispatcherMixin {
     private static final float NAME_AREA_WIDTH = 82.0F;
-    private static final float NAME_CENTER_Y = 4.5F;
+    private static final float NAME_CENTER_Y = 0.5F;
     private static final float MIN_SINGLE_LINE_SCALE = 0.78F;
     private static final float MIN_TWO_LINE_SCALE = 0.68F;
     private static final float LINE_SPACING = 10.0F;
@@ -165,7 +166,7 @@ public class BlockEntityRenderDispatcherMixin {
         // FIXED has a built-in 0.5 scale. Preserve the requested 8 px face while
         // flattening model depth so no part of the icon is buried in the lectern.
         poseStack.scale(PRICE_ICON_MODEL_SCALE, PRICE_ICON_MODEL_SCALE, 0.01F);
-        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, 0, 0);
+        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
         poseStack.popPose();
     }
 
