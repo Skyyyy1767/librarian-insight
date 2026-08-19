@@ -165,9 +165,9 @@ public class BlockEntityRenderDispatcherMixin {
         poseStack.translate(centerX, centerY, -0.1F);
         // FIXED has a built-in 0.5 scale. Preserve the requested 8 px face while
         // flattening model depth so no part of the icon is buried in the lectern.
-        // The protected lectern transform negates local Y for text. Undo that
-        // inversion for item artwork so asymmetric icons (notably the book) are upright.
-        poseStack.scale(PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
+        // The protected lectern transform and FIXED item transform invert the two
+        // face axes. Compensate locally so asymmetric artwork is upright and readable.
+        poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
         itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
         poseStack.popPose();
     }
