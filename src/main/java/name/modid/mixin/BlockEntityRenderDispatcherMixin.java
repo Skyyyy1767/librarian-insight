@@ -1,6 +1,7 @@
 package name.modid.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -9,10 +10,13 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.blockentity.state.LecternRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -31,10 +35,9 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float MIN_TWO_LINE_SCALE = 0.68F;
     private static final float LINE_SPACING = 10.0F;
     private static final float PRICE_ICON_SIZE = 8.0F;
-    private static final float PRICE_ICON_MODEL_SCALE = PRICE_ICON_SIZE * 2.0F;
-    private static final int PRICE_ICON_OVERLAY = OverlayTexture.pack(0.4F, false);
     private static final float ICON_AMOUNT_GAP = 4.0F;
     private static final float PRICE_GROUP_GAP = 11.0F;
+    private static final float EMERALD_AMOUNT_Y_OFFSET = 2.0F;
 
     @Inject(method = "submit", at = @At("TAIL"))
     private void submitLecternText(
@@ -124,7 +127,7 @@ public class BlockEntityRenderDispatcherMixin {
         cursor += PRICE_ICON_SIZE;
         if (!emeraldText.isEmpty()) {
             cursor += ICON_AMOUNT_GAP;
-            renderPriceText(poseStack, collector, font, emeraldText, cursor, centerY, light);
+            renderPriceText(poseStack, collector, font, emeraldText, cursor, centerY + EMERALD_AMOUNT_Y_OFFSET, light);
             cursor += font.width(emeraldText);
         }
 
@@ -159,18 +162,51 @@ public class BlockEntityRenderDispatcherMixin {
             return;
         }
         ItemStackRenderState itemState = new ItemStackRenderState();
-        // FIXED is the flat world-space item-frame transform. GUI adds a 3D tilt,
-        // which becomes nearly edge-on after the lectern's sloped-plane rotation.
-        minecraft.getItemModelResolver().updateForLiving(itemState, stack, ItemDisplayContext.FIXED, minecraft.player);
+        minecraft.getItemModelResolver().updateForTopItem(
+                itemState,
+                stack,
+                ItemDisplayContext.GUI,
+                minecraft.level,
+                minecraft.player,
+                0
+        );
+        TextureAtlasSprite sprite = itemState.pickParticleMaterial(RandomSource.create(0L)).sprite();
         poseStack.pushPose();
         poseStack.translate(centerX, centerY, -0.1F);
-        // FIXED has a built-in 0.5 scale. Preserve the requested 8 px face while
-        // flattening model depth so no part of the icon is buried in the lectern.
-        // The protected lectern transform and FIXED item transform invert the two
-        // face axes. Compensate locally so asymmetric artwork is upright and readable.
-        poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
-        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, PRICE_ICON_OVERLAY, 0);
+        poseStack.scale(PRICE_ICON_SIZE, PRICE_ICON_SIZE, 1.0F);
+        collector.submitCustomGeometry(
+                poseStack,
+                RenderTypes.entityTranslucentEmissive(sprite.atlasLocation()),
+                (pose, vertices) -> renderSpriteQuad(pose, vertices, sprite)
+        );
         poseStack.popPose();
+    }
+
+    private static void renderSpriteQuad(
+            PoseStack.Pose pose,
+            VertexConsumer vertices,
+            TextureAtlasSprite sprite
+    ) {
+        iconVertex(vertices, pose, -0.5F, -0.5F, sprite.getU0(), sprite.getV0());
+        iconVertex(vertices, pose, 0.5F, -0.5F, sprite.getU1(), sprite.getV0());
+        iconVertex(vertices, pose, 0.5F, 0.5F, sprite.getU1(), sprite.getV1());
+        iconVertex(vertices, pose, -0.5F, 0.5F, sprite.getU0(), sprite.getV1());
+    }
+
+    private static void iconVertex(
+            VertexConsumer vertices,
+            PoseStack.Pose pose,
+            float x,
+            float y,
+            float u,
+            float v
+    ) {
+        vertices.addVertex(pose, x, y, 0.0F)
+                .setColor(0xFFFFFFFF)
+                .setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(LightCoordsUtil.FULL_BRIGHT)
+                .setNormal(pose, 0.0F, 0.0F, 1.0F);
     }
 
     private static void renderPriceText(
