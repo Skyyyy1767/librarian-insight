@@ -49,7 +49,7 @@ public final class LecternManager {
 
     private static DisplayText format(@Nullable EnchantmentInfo enchantment) {
         if (enchantment == null) {
-            return new DisplayText(shorten(Items.BOOKSHELF.getName(Items.BOOKSHELF.getDefaultInstance()).getString()), false);
+            return new DisplayText(Items.BOOKSHELF.getName(Items.BOOKSHELF.getDefaultInstance()).getString(), false);
         }
         String name = enchantment.enchantment().unwrapKey()
                 .map(key -> Component.translatable(Util.makeDescriptionId("enchantment", key.identifier())).getString())
@@ -57,11 +57,7 @@ public final class LecternManager {
         if (enchantment.enchantment().value().getMaxLevel() != 1) {
             name += " " + Component.translatable("enchantment.level." + enchantment.level()).getString();
         }
-        return new DisplayText(shorten(name), enchantment.isMaxLevel());
-    }
-
-    private static String shorten(String text) {
-        return text.length() > 15 ? text.substring(0, 12) + ".." : text;
+        return new DisplayText(name, enchantment.isMaxLevel());
     }
 
     private void clientTick(Minecraft minecraft) {
