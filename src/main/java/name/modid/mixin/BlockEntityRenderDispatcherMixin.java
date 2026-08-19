@@ -29,6 +29,7 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float MIN_TWO_LINE_SCALE = 0.68F;
     private static final float LINE_SPACING = 10.0F;
     private static final float PRICE_ICON_SIZE = 8.0F;
+    private static final float PRICE_ICON_MODEL_SCALE = PRICE_ICON_SIZE * 2.0F;
     private static final float PRICE_ELEMENT_GAP = 2.0F;
 
     @Inject(method = "submit", at = @At("TAIL"))
@@ -141,10 +142,14 @@ public class BlockEntityRenderDispatcherMixin {
             return;
         }
         ItemStackRenderState itemState = new ItemStackRenderState();
-        minecraft.getItemModelResolver().updateForLiving(itemState, stack, ItemDisplayContext.GUI, minecraft.player);
+        // FIXED is the flat world-space item-frame transform. GUI adds a 3D tilt,
+        // which becomes nearly edge-on after the lectern's sloped-plane rotation.
+        minecraft.getItemModelResolver().updateForLiving(itemState, stack, ItemDisplayContext.FIXED, minecraft.player);
         poseStack.pushPose();
         poseStack.translate(centerX, centerY, -0.1F);
-        poseStack.scale(PRICE_ICON_SIZE, PRICE_ICON_SIZE, PRICE_ICON_SIZE);
+        // FIXED has a built-in 0.5 scale. Preserve the requested 8 px face while
+        // flattening model depth so no part of the icon is buried in the lectern.
+        poseStack.scale(PRICE_ICON_MODEL_SCALE, PRICE_ICON_MODEL_SCALE, 0.01F);
         itemState.submit(poseStack, collector, light, 0, 0);
         poseStack.popPose();
     }
