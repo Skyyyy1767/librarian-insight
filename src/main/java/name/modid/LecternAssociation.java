@@ -7,10 +7,12 @@ public record LecternAssociation(UUID villagerUuid, Confidence confidence) {
     public enum Confidence {
         /** The legacy nearest-within-2.5-blocks rule; inherently estimated. */
         FALLBACK("Estimated (nearby librarian)", 0),
+        /** Status event from an existing librarian correlated with one recent placement. */
+        CLAIM_CORRELATED("Correlated recent claim", 1),
         /** A unique librarian work sound and unique workstation candidate agreed. */
-        WORK_OBSERVED("Observed at this workstation", 1),
+        WORK_OBSERVED("Observed at this workstation", 2),
         /** Event 14, a profession transition, and one claim candidate agreed. */
-        CLAIM_OBSERVED("Observed claim", 2);
+        CLAIM_OBSERVED("Observed claim", 3);
 
         private final String description;
         private final int strength;
@@ -26,6 +28,10 @@ public record LecternAssociation(UUID villagerUuid, Confidence confidence) {
 
         boolean atLeast(Confidence other) {
             return strength >= other.strength;
+        }
+
+        boolean strongerThan(Confidence other) {
+            return strength > other.strength;
         }
     }
 }

@@ -5,6 +5,8 @@ import java.util.Optional;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.npc.villager.VillagerType;
 import net.minecraft.world.item.trading.MerchantOffers;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.ItemCost;
 
 /**
  * A defensive, read-only snapshot of the complete offer packet received for one
@@ -31,7 +33,7 @@ public final class KnownLibrarianSnapshot {
             long receivedGameTime
     ) {
         this.villagerUuid = villagerUuid;
-        this.offers = offers.copy();
+        this.offers = deepCopyOffers(offers);
         this.villagerType = Optional.ofNullable(villagerType).orElseGet(Optional::empty);
         this.villagerLevel = villagerLevel;
         this.villagerXp = villagerXp;
@@ -46,7 +48,7 @@ public final class KnownLibrarianSnapshot {
 
     /** Returns a deep copy so the cached packet state cannot be mutated by a screen. */
     public MerchantOffers offersCopy() {
-        return offers.copy();
+        return deepCopyOffers(offers);
     }
 
     public Optional<ResourceKey<VillagerType>> villagerType() {
@@ -71,5 +73,30 @@ public final class KnownLibrarianSnapshot {
 
     public long receivedGameTime() {
         return receivedGameTime;
+    }
+
+    private static MerchantOffers deepCopyOffers(MerchantOffers source) {
+        MerchantOffers result = new MerchantOffers();
+        for (MerchantOffer offer : source) {
+            ItemCost first = copyCost(offer.getItemCostA());
+            Optional<ItemCost> second = offer.getItemCostB().map(KnownLibrarianSnapshot::copyCost);
+            MerchantOffer copy = new MerchantOffer(
+                    first,
+                    second,
+                    offer.getResult().copy(),
+                    offer.getUses(),
+                    offer.getMaxUses(),
+                    offer.getXp(),
+                    offer.getPriceMultiplier(),
+                    offer.getDemand()
+            );
+            copy.setSpecialPriceDiff(offer.getSpecialPriceDiff());
+            result.add(copy);
+        }
+        return result;
+    }
+
+    private static ItemCost copyCost(ItemCost cost) {
+        return new ItemCost(cost.item(), cost.count(), cost.components());
     }
 }

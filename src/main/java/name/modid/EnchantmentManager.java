@@ -63,7 +63,7 @@ public final class EnchantmentManager {
 
     /** Associates the next offer packet with the serialized background query. */
     public void expectMerchantContainer(int containerId) {
-        if (currentVillager != null) {
+        if (currentVillager != null && expectedMerchantContainerId == -1) {
             expectedMerchantContainerId = containerId;
         }
     }
@@ -95,6 +95,17 @@ public final class EnchantmentManager {
 
     public @Nullable KnownLibrarianSnapshot getOfferSnapshot(UUID villagerUuid) {
         return offerSnapshots.get(villagerUuid);
+    }
+
+    /** Requests a fresh adjusted-price packet when the detailed menu is opened. */
+    public void requestOfferRefresh(UUID villagerUuid) {
+        for (Villager villager : enchantments.keySet()) {
+            if (villager.getUUID().equals(villagerUuid) && villager.isAlive()
+                    && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                queueVillager(villager);
+                return;
+            }
+        }
     }
 
     public @Nullable EnchantmentInfo getEnchant(Villager villager) {

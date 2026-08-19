@@ -36,6 +36,7 @@ public final class LecternManager {
     private final Map<UUID, BlockPos> lecternByVillager = new HashMap<>();
     private final Map<UUID, Boolean> librarianProfession = new HashMap<>();
     private final Map<UUID, ClaimSignal> recentClaimSignals = new HashMap<>();
+    private final Map<BlockPos, Long> recentPlacements = new HashMap<>();
     private final Set<BlockPos> ambiguousLecterns = new HashSet<>();
     private @Nullable ClientLevel trackedLevel;
     private int clock;
@@ -84,6 +85,7 @@ public final class LecternManager {
         BlockPos immutablePos = pos.immutable();
         displays.remove(immutablePos);
         knownLecterns.remove(immutablePos);
+        recentPlacements.remove(immutablePos);
         removeAssociation(immutablePos);
         // Keep only a data-free tombstone so a replacement cannot lazily rebuild
         // the old nearby-villager display before fresh offers arrive.
@@ -95,6 +97,10 @@ public final class LecternManager {
         BlockPos immutablePos = pos.immutable();
         removeAssociation(immutablePos);
         knownLecterns.add(immutablePos);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null) {
+            recentPlacements.put(immutablePos, minecraft.level.getGameTime());
+        }
         displays.put(immutablePos, null);
         pendingPlacements.add(immutablePos);
     }
@@ -110,6 +116,21 @@ public final class LecternManager {
                 villager.position(),
                 villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
         ));
+        if (villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+            List<BlockPos> candidates = associationCandidates(villager.position(), 2.0);
+            long now = minecraft.level.getGameTime();
+            List<BlockPos> recentCandidates = candidates.stream()
+                    .filter(pos -> {
+                        Long placedAt = recentPlacements.get(pos);
+                        return placedAt != null && now >= placedAt && now - placedAt <= 1200L;
+                    })
+                    .toList();
+            if (recentCandidates.size() == 1) {
+                bind(recentCandidates.getFirst(), villager.getUUID(), LecternAssociation.Confidence.CLAIM_CORRELATED);
+            } else if (recentCandidates.size() > 1) {
+                ambiguousLecterns.addAll(recentCandidates);
+            }
+        }
     }
 
     /**
@@ -135,7 +156,7 @@ public final class LecternManager {
             return;
         }
         Villager villager = soundingVillagers.getFirst();
-        List<BlockPos> candidates = associationCandidates(villager.position(), 1.86, villager.getUUID());
+        List<BlockPos> candidates = associationCandidates(soundPosition, 1.73);
         if (candidates.size() == 1) {
             bind(candidates.getFirst(), villager.getUUID(), LecternAssociation.Confidence.WORK_OBSERVED);
         } else if (candidates.size() > 1) {
@@ -174,6 +195,9 @@ public final class LecternManager {
             return null;
         }
         bind(immutablePos, closest.getUUID(), LecternAssociation.Confidence.FALLBACK);
+        if (candidates > 1) {
+            ambiguousLecterns.add(immutablePos);
+        }
         return associations.get(immutablePos);
     }
 
@@ -197,6 +221,11 @@ public final class LecternManager {
                 continue;
             }
             UUID uuid = villager.getUUID();
+            if (!villager.isAlive()) {
+                invalidateVillager(uuid);
+                VisibleLibrarianTrades.enchantmentManager.invalidateVillager(uuid);
+                continue;
+            }
             boolean isLibrarian = villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN);
             Boolean wasLibrarian = librarianProfession.put(uuid, isLibrarian);
             if (!isLibrarian && Boolean.TRUE.equals(wasLibrarian)) {
@@ -211,7 +240,7 @@ public final class LecternManager {
             boolean observedTransition = Boolean.FALSE.equals(wasLibrarian)
                     || (wasLibrarian == null && signal != null && !signal.wasLibrarian());
             if (observedTransition && signal != null && now - signal.gameTime() <= 10L) {
-                List<BlockPos> candidates = associationCandidates(signal.villagerPosition(), 2.1, uuid);
+                List<BlockPos> candidates = associationCandidates(signal.villagerPosition(), 2.0);
                 if (candidates.size() == 1) {
                     bind(candidates.getFirst(), uuid, LecternAssociation.Confidence.CLAIM_OBSERVED);
                 } else if (candidates.size() > 1) {
@@ -221,23 +250,26 @@ public final class LecternManager {
             }
         }
         recentClaimSignals.entrySet().removeIf(entry -> now - entry.getValue().gameTime() > 20L);
+        recentPlacements.entrySet().removeIf(entry -> now - entry.getValue() > 1200L);
     }
 
-    private List<BlockPos> associationCandidates(Vec3 villagerPosition, double radius, UUID villagerUuid) {
+    private List<BlockPos> associationCandidates(Vec3 villagerPosition, double radius) {
         double radiusSquared = radius * radius;
         List<BlockPos> candidates = new ArrayList<>();
-        for (BlockPos pos : knownLecterns) {
-            Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.level == null || !minecraft.level.getBlockState(pos).is(Blocks.LECTERN)) {
-                continue;
-            }
-            LecternAssociation existing = associations.get(pos);
-            if (existing != null && !existing.villagerUuid().equals(villagerUuid)
-                    && existing.confidence() != LecternAssociation.Confidence.FALLBACK) {
-                continue;
-            }
-            if (Vec3.atCenterOf(pos).distanceToSqr(villagerPosition) <= radiusSquared) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return candidates;
+        }
+        int extent = (int)Math.ceil(radius) + 1;
+        BlockPos center = BlockPos.containing(villagerPosition);
+        for (BlockPos cursor : BlockPos.betweenClosed(
+                center.offset(-extent, -extent, -extent),
+                center.offset(extent, extent, extent))) {
+            if (minecraft.level.getBlockState(cursor).is(Blocks.LECTERN)
+                    && Vec3.atCenterOf(cursor).distanceToSqr(villagerPosition) < radiusSquared) {
+                BlockPos pos = cursor.immutable();
                 candidates.add(pos);
+                knownLecterns.add(pos);
             }
         }
         return candidates;
@@ -246,14 +278,20 @@ public final class LecternManager {
     private void bind(BlockPos pos, UUID villagerUuid, LecternAssociation.Confidence confidence) {
         BlockPos immutablePos = pos.immutable();
         LecternAssociation existingAtPosition = associations.get(immutablePos);
-        if (existingAtPosition != null && existingAtPosition.confidence().atLeast(confidence)
-                && !existingAtPosition.villagerUuid().equals(villagerUuid)) {
-            return;
+        if (existingAtPosition != null) {
+            if (existingAtPosition.villagerUuid().equals(villagerUuid)
+                    && existingAtPosition.confidence().atLeast(confidence)) {
+                return;
+            }
+            if (!existingAtPosition.villagerUuid().equals(villagerUuid)
+                    && existingAtPosition.confidence().strongerThan(confidence)) {
+                return;
+            }
         }
         BlockPos oldPosition = lecternByVillager.get(villagerUuid);
         if (oldPosition != null && !oldPosition.equals(immutablePos)) {
             LecternAssociation oldAssociation = associations.get(oldPosition);
-            if (oldAssociation != null && oldAssociation.confidence().atLeast(confidence)) {
+            if (oldAssociation != null && oldAssociation.confidence().strongerThan(confidence)) {
                 return;
             }
             associations.remove(oldPosition);
@@ -263,7 +301,9 @@ public final class LecternManager {
         }
         associations.put(immutablePos, new LecternAssociation(villagerUuid, confidence));
         lecternByVillager.put(villagerUuid, immutablePos);
-        ambiguousLecterns.remove(immutablePos);
+        if (confidence != LecternAssociation.Confidence.FALLBACK) {
+            ambiguousLecterns.remove(immutablePos);
+        }
     }
 
     private void removeAssociation(BlockPos pos) {
@@ -327,6 +367,7 @@ public final class LecternManager {
         lecternByVillager.clear();
         librarianProfession.clear();
         recentClaimSignals.clear();
+        recentPlacements.clear();
         ambiguousLecterns.clear();
         trackedLevel = null;
         clock = 0;

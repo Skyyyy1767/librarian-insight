@@ -149,6 +149,7 @@ public final class LibrarianMinimumPrice {
     private static boolean matchesItemCost(ItemCost actual, Item item, Integer count) {
         ItemStack expected = new ItemStack(item, count == null ? actual.count() : count);
         return actual.count() > 0
+                && actual.components().alwaysMatches()
                 && (count == null || actual.count() == count)
                 && ItemStack.isSameItemSameComponents(actual.itemStack(), expected);
     }
