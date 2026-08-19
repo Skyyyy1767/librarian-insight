@@ -19,7 +19,8 @@ public abstract class BlockMixin {
     @Inject(method = "setPlacedBy", at = @At("HEAD"))
     private void visibleLibrarianTrades$cleanAfterLecternPlacement(Level level, BlockPos pos, BlockState state,
             @Nullable LivingEntity placer, ItemStack stack, CallbackInfo ci) {
-        if (stack.is(Items.LECTERN)) {
+        if (level.isClientSide() && stack.is(Items.LECTERN)) {
+            VisibleLibrarianTrades.lecternManager.prepareForPlacement(pos);
             VisibleLibrarianTrades.enchantmentManager.setNeedsCleanup();
         }
     }
