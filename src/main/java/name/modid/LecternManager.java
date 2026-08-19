@@ -57,8 +57,15 @@ public final class LecternManager {
         });
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, level) -> {
             if (entity instanceof Villager villager) {
-                invalidateVillager(villager.getUUID());
-                VisibleLibrarianTrades.enchantmentManager.invalidateVillager(villager.getUUID());
+                if (villager.isAlive()) {
+                    // Client tracking/chunk unloads are temporary. Keep the UUID
+                    // association and its last valid offer data until stronger
+                    // invalidation evidence is observed.
+                    VisibleLibrarianTrades.enchantmentManager.detachVillagerEntity(villager.getUUID());
+                } else {
+                    invalidateVillager(villager.getUUID());
+                    VisibleLibrarianTrades.enchantmentManager.invalidateVillager(villager.getUUID());
+                }
             }
         });
     }
@@ -215,10 +222,23 @@ public final class LecternManager {
         bind(pos, villagerUuid, LecternAssociation.Confidence.SERVER_CONFIRMED);
     }
 
+    /** Clears an exact link only after the integrated server reports a different JOB_SITE. */
+    public void invalidateIntegratedServerAssociation(BlockPos pos, UUID villagerUuid) {
+        BlockPos immutablePos = pos.immutable();
+        LecternAssociation association = associations.get(immutablePos);
+        if (association != null
+                && association.villagerUuid().equals(villagerUuid)
+                && association.confidence() == LecternAssociation.Confidence.SERVER_CONFIRMED) {
+            removeAssociation(immutablePos);
+            displays.put(immutablePos, null);
+        }
+    }
+
     public void invalidateVillager(UUID villagerUuid) {
         BlockPos associatedLectern = lecternByVillager.remove(villagerUuid);
         if (associatedLectern != null) {
             associations.remove(associatedLectern);
+            displays.put(associatedLectern, null);
         }
         librarianProfession.remove(villagerUuid);
         recentClaimSignals.remove(villagerUuid);
@@ -305,9 +325,13 @@ public final class LecternManager {
                 return;
             }
             associations.remove(oldPosition);
+            displays.put(oldPosition, null);
         }
         if (existingAtPosition != null) {
             lecternByVillager.remove(existingAtPosition.villagerUuid());
+            if (!existingAtPosition.villagerUuid().equals(villagerUuid)) {
+                displays.put(immutablePos, null);
+            }
         }
         associations.put(immutablePos, new LecternAssociation(villagerUuid, confidence));
         lecternByVillager.put(villagerUuid, immutablePos);
@@ -325,16 +349,16 @@ public final class LecternManager {
     }
 
     public void updateOne(BlockPos pos) {
-        Villager closest = null;
-        float nearest = 2.5F;
-        for (Villager villager : VisibleLibrarianTrades.enchantmentManager.getTrackedVillagers()) {
-            float distance = (float) Math.sqrt(pos.distSqr(villager.blockPosition()));
-            if (distance < nearest) {
-                nearest = distance;
-                closest = villager;
-            }
+        LecternAssociation association = associations.get(pos);
+        if (association == null) {
+            association = getAssociationForMenu(pos);
         }
-        displays.put(pos, closest == null ? null : format(VisibleLibrarianTrades.enchantmentManager.getEnchant(closest)));
+        if (association == null
+                || !VisibleLibrarianTrades.enchantmentManager.hasResolvedEnchant(association.villagerUuid())) {
+            displays.put(pos, null);
+            return;
+        }
+        displays.put(pos, format(VisibleLibrarianTrades.enchantmentManager.getEnchant(association.villagerUuid())));
     }
 
     private static DisplayText format(@Nullable EnchantmentInfo enchantment) {

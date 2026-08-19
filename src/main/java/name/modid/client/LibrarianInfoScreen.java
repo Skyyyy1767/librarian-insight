@@ -1053,6 +1053,12 @@ public final class LibrarianInfoScreen extends Screen {
                 VisibleLibrarianTrades.lecternManager.confirmIntegratedServerAssociation(
                         lecternPos, snapshot.villagerUuid()
                 );
+            } else if (snapshot != null
+                    && result.availability() == IntegratedVillagerStatusService.Availability.INTEGRATED_FALLBACK
+                    && snapshot.jobSite().filter(lecternPos::equals).isEmpty()) {
+                VisibleLibrarianTrades.lecternManager.invalidateIntegratedServerAssociation(
+                        lecternPos, snapshot.villagerUuid()
+                );
             }
         });
     }

@@ -24,6 +24,8 @@ import net.minecraft.world.item.trading.MerchantOffers;
 public final class EnchantmentManager {
     private final Map<Villager, @Nullable EnchantmentInfo> enchantments = new IdentityHashMap<>();
     private final Set<Villager> resolved = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<UUID, @Nullable EnchantmentInfo> enchantmentsByUuid = new HashMap<>();
+    private final Set<UUID> resolvedUuids = new java.util.HashSet<>();
     private final Queue<Villager> queryQueue = new ArrayDeque<>();
     private final Map<UUID, KnownLibrarianSnapshot> offerSnapshots = new HashMap<>();
     private @Nullable Villager currentVillager;
@@ -56,6 +58,8 @@ public final class EnchantmentManager {
         if (currentVillager != null) {
             enchantments.put(currentVillager, enchantment);
             resolved.add(currentVillager);
+            enchantmentsByUuid.put(currentVillager.getUUID(), enchantment);
+            resolvedUuids.add(currentVillager.getUUID());
             currentVillager = null;
             expectedMerchantContainerId = -1;
         }
@@ -110,6 +114,15 @@ public final class EnchantmentManager {
 
     public @Nullable EnchantmentInfo getEnchant(Villager villager) {
         return enchantments.get(villager);
+    }
+
+    /** Returns the last resolved label data even when the client entity is unloaded. */
+    public @Nullable EnchantmentInfo getEnchant(UUID villagerUuid) {
+        return enchantmentsByUuid.get(villagerUuid);
+    }
+
+    public boolean hasResolvedEnchant(UUID villagerUuid) {
+        return resolvedUuids.contains(villagerUuid);
     }
 
     public Collection<Villager> getTrackedVillagers() {
@@ -168,7 +181,13 @@ public final class EnchantmentManager {
                     && !villager.isBaby()
                     && villager.distanceTo(player) < 4.0F
                     && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
-                enchantments.putIfAbsent(villager, null);
+                if (!enchantments.containsKey(villager)) {
+                    UUID uuid = villager.getUUID();
+                    enchantments.put(villager, enchantmentsByUuid.get(uuid));
+                    if (resolvedUuids.contains(uuid)) {
+                        resolved.add(villager);
+                    }
+                }
             }
         }
     }
@@ -193,7 +212,11 @@ public final class EnchantmentManager {
         }
         enchantments.keySet().removeIf(villager -> !villager.isAlive()
                 || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN));
-        invalidUuids.forEach(offerSnapshots::remove);
+        invalidUuids.forEach(uuid -> {
+            enchantmentsByUuid.remove(uuid);
+            resolvedUuids.remove(uuid);
+            offerSnapshots.remove(uuid);
+        });
         if (VisibleLibrarianTrades.lecternManager != null) {
             invalidUuids.forEach(VisibleLibrarianTrades.lecternManager::invalidateVillager);
         }
@@ -205,7 +228,27 @@ public final class EnchantmentManager {
         enchantments.keySet().removeIf(villager -> villager.getUUID().equals(villagerUuid));
         resolved.removeIf(villager -> villager.getUUID().equals(villagerUuid));
         queryQueue.removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        enchantmentsByUuid.remove(villagerUuid);
+        resolvedUuids.remove(villagerUuid);
         offerSnapshots.remove(villagerUuid);
+        if (currentVillager != null && currentVillager.getUUID().equals(villagerUuid)) {
+            currentVillager = null;
+            expectedMerchantContainerId = -1;
+        }
+        if (previousVillager != null && previousVillager.getUUID().equals(villagerUuid)) {
+            previousVillager = null;
+        }
+    }
+
+    /**
+     * Drops only the transient client entity reference. UUID-keyed trade data is
+     * retained because a normal tracking/chunk unload is not evidence that the
+     * librarian or its workstation assignment became invalid.
+     */
+    public void detachVillagerEntity(UUID villagerUuid) {
+        enchantments.keySet().removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        resolved.removeIf(villager -> villager.getUUID().equals(villagerUuid));
+        queryQueue.removeIf(villager -> villager.getUUID().equals(villagerUuid));
         if (currentVillager != null && currentVillager.getUUID().equals(villagerUuid)) {
             currentVillager = null;
             expectedMerchantContainerId = -1;
@@ -218,6 +261,8 @@ public final class EnchantmentManager {
     public void reset() {
         enchantments.clear();
         resolved.clear();
+        enchantmentsByUuid.clear();
+        resolvedUuids.clear();
         queryQueue.clear();
         offerSnapshots.clear();
         currentVillager = null;
