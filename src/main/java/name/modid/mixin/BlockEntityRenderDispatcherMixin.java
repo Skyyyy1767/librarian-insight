@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.blockentity.state.LecternRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -30,7 +31,8 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float LINE_SPACING = 10.0F;
     private static final float PRICE_ICON_SIZE = 8.0F;
     private static final float PRICE_ICON_MODEL_SCALE = PRICE_ICON_SIZE * 2.0F;
-    private static final float PRICE_ELEMENT_GAP = 2.0F;
+    private static final float ICON_AMOUNT_GAP = 4.0F;
+    private static final float PRICE_GROUP_GAP = 7.0F;
 
     @Inject(method = "submit", at = @At("TAIL"))
     private void submitLecternText(
@@ -109,24 +111,38 @@ public class BlockEntityRenderDispatcherMixin {
             int emeraldCost,
             int bookCost
     ) {
-        String emeraldText = Integer.toString(emeraldCost);
-        String bookText = Integer.toString(bookCost);
-        float emeraldPart = PRICE_ICON_SIZE + PRICE_ELEMENT_GAP + font.width(emeraldText);
-        float bookPart = bookCost > 0 ? PRICE_ELEMENT_GAP * 2.0F + PRICE_ICON_SIZE + PRICE_ELEMENT_GAP + font.width(bookText) : 0.0F;
-        float rowWidth = emeraldPart + bookPart;
+        String emeraldText = quantityText(emeraldCost);
+        String bookText = quantityText(bookCost);
+        float emeraldPart = pricePartWidth(font, emeraldText);
+        float bookPart = bookCost > 0 ? PRICE_ICON_SIZE + (bookText.isEmpty() ? 0.0F : ICON_AMOUNT_GAP + font.width(bookText)) : 0.0F;
+        float rowWidth = emeraldPart + (bookCost > 0 ? PRICE_GROUP_GAP + bookPart : 0.0F);
         float cursor = -rowWidth / 2.0F;
 
-        renderItemIcon(poseStack, collector, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY, light);
-        cursor += PRICE_ICON_SIZE + PRICE_ELEMENT_GAP;
-        renderPriceText(poseStack, collector, font, emeraldText, cursor, centerY, light);
-        cursor += font.width(emeraldText);
+        renderItemIcon(poseStack, collector, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+        cursor += PRICE_ICON_SIZE;
+        if (!emeraldText.isEmpty()) {
+            cursor += ICON_AMOUNT_GAP;
+            renderPriceText(poseStack, collector, font, emeraldText, cursor, centerY, light);
+            cursor += font.width(emeraldText);
+        }
 
         if (bookCost > 0) {
-            cursor += PRICE_ELEMENT_GAP * 2.0F;
-            renderItemIcon(poseStack, collector, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY, light);
-            cursor += PRICE_ICON_SIZE + PRICE_ELEMENT_GAP;
-            renderPriceText(poseStack, collector, font, bookText, cursor, centerY, light);
+            cursor += PRICE_GROUP_GAP;
+            renderItemIcon(poseStack, collector, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+            cursor += PRICE_ICON_SIZE;
+            if (!bookText.isEmpty()) {
+                cursor += ICON_AMOUNT_GAP;
+                renderPriceText(poseStack, collector, font, bookText, cursor, centerY, light);
+            }
         }
+    }
+
+    private static String quantityText(int count) {
+        return count == 1 ? "" : Integer.toString(count);
+    }
+
+    private static float pricePartWidth(Font font, String quantity) {
+        return PRICE_ICON_SIZE + (quantity.isEmpty() ? 0.0F : ICON_AMOUNT_GAP + font.width(quantity));
     }
 
     private static void renderItemIcon(
@@ -134,8 +150,7 @@ public class BlockEntityRenderDispatcherMixin {
             SubmitNodeCollector collector,
             ItemStack stack,
             float centerX,
-            float centerY,
-            int light
+            float centerY
     ) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
@@ -150,7 +165,7 @@ public class BlockEntityRenderDispatcherMixin {
         // FIXED has a built-in 0.5 scale. Preserve the requested 8 px face while
         // flattening model depth so no part of the icon is buried in the lectern.
         poseStack.scale(PRICE_ICON_MODEL_SCALE, PRICE_ICON_MODEL_SCALE, 0.01F);
-        itemState.submit(poseStack, collector, light, 0, 0);
+        itemState.submit(poseStack, collector, LightCoordsUtil.FULL_BRIGHT, 0, 0);
         poseStack.popPose();
     }
 
