@@ -1,22 +1,24 @@
 package name.modid.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.math.Axis;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.blockentity.state.LecternRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.item.ItemStackRenderState.FoilType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.LightCoordsUtil;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -35,6 +37,7 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float MIN_TWO_LINE_SCALE = 0.68F;
     private static final float LINE_SPACING = 10.0F;
     private static final float PRICE_ICON_SIZE = 8.0F;
+    private static final float PRICE_ICON_MODEL_SCALE = PRICE_ICON_SIZE * 2.0F;
     private static final float ICON_AMOUNT_GAP = 4.0F;
     private static final float PRICE_GROUP_GAP = 11.0F;
     private static final float EMERALD_AMOUNT_Y_OFFSET = 2.0F;
@@ -89,7 +92,7 @@ public class BlockEntityRenderDispatcherMixin {
                     lecternState.lightCoords,
                     VisibleLibrarianTrades.priceDisplay.getTextColor().argb(),
                     0,
-                    display.maxed() ? 0xFFFF8800 : 0xFFFFFFFF
+                    0xFFFFFFFF
             );
             poseStack.popPose();
         }
@@ -162,51 +165,56 @@ public class BlockEntityRenderDispatcherMixin {
             return;
         }
         ItemStackRenderState itemState = new ItemStackRenderState();
-        minecraft.getItemModelResolver().updateForTopItem(
-                itemState,
-                stack,
-                ItemDisplayContext.GUI,
-                minecraft.level,
-                minecraft.player,
-                0
-        );
-        TextureAtlasSprite sprite = itemState.pickParticleMaterial(RandomSource.create(0L)).sprite();
+        minecraft.getItemModelResolver().updateForLiving(itemState, stack, ItemDisplayContext.FIXED, minecraft.player);
         poseStack.pushPose();
         poseStack.translate(centerX, centerY, -0.1F);
-        poseStack.scale(PRICE_ICON_SIZE, PRICE_ICON_SIZE, 1.0F);
-        collector.submitCustomGeometry(
+        poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
+        itemState.submit(
                 poseStack,
-                RenderTypes.entityTranslucentEmissive(sprite.atlasLocation()),
-                (pose, vertices) -> renderSpriteQuad(pose, vertices, sprite)
+                new FullBrightItemCollector(collector),
+                LightCoordsUtil.FULL_BRIGHT,
+                OverlayTexture.NO_OVERLAY,
+                0
         );
         poseStack.popPose();
     }
 
-    private static void renderSpriteQuad(
-            PoseStack.Pose pose,
-            VertexConsumer vertices,
-            TextureAtlasSprite sprite
-    ) {
-        iconVertex(vertices, pose, -0.5F, -0.5F, sprite.getU0(), sprite.getV0());
-        iconVertex(vertices, pose, 0.5F, -0.5F, sprite.getU1(), sprite.getV0());
-        iconVertex(vertices, pose, 0.5F, 0.5F, sprite.getU1(), sprite.getV1());
-        iconVertex(vertices, pose, -0.5F, 0.5F, sprite.getU0(), sprite.getV1());
-    }
+    /** Preserves the resolved item model and transforms while bypassing world directional lighting. */
+    private static final class FullBrightItemCollector extends SubmitNodeStorage {
+        private final SubmitNodeCollector delegate;
 
-    private static void iconVertex(
-            VertexConsumer vertices,
-            PoseStack.Pose pose,
-            float x,
-            float y,
-            float u,
-            float v
-    ) {
-        vertices.addVertex(pose, x, y, 0.0F)
-                .setColor(0xFFFFFFFF)
-                .setUv(u, v)
-                .setOverlay(OverlayTexture.NO_OVERLAY)
-                .setLight(LightCoordsUtil.FULL_BRIGHT)
-                .setNormal(pose, 0.0F, 0.0F, 1.0F);
+        private FullBrightItemCollector(SubmitNodeCollector delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void submitItem(
+                PoseStack itemPose,
+                ItemDisplayContext displayContext,
+                int lightCoords,
+                int overlayCoords,
+                int outlineColor,
+                int[] tintLayers,
+                List<BakedQuad> quads,
+                FoilType foilType
+        ) {
+            for (BakedQuad quad : quads) {
+                QuadInstance instance = new QuadInstance();
+                instance.setColor(colorFor(quad, tintLayers));
+                instance.setLightCoords(LightCoordsUtil.FULL_BRIGHT);
+                instance.setOverlayCoords(OverlayTexture.NO_OVERLAY);
+                delegate.submitCustomGeometry(
+                        itemPose,
+                        RenderTypes.eyes(quad.materialInfo().sprite().atlasLocation()),
+                        (pose, vertices) -> vertices.putBakedQuad(pose, quad, instance)
+                );
+            }
+        }
+
+        private static int colorFor(BakedQuad quad, int[] tintLayers) {
+            int tintIndex = quad.materialInfo().tintIndex();
+            return tintIndex >= 0 && tintIndex < tintLayers.length ? tintLayers[tintIndex] : 0xFFFFFFFF;
+        }
     }
 
     private static void renderPriceText(
