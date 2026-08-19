@@ -42,6 +42,7 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
                                 .then(literal("on").executes(context -> updatePriceSetting(context.getSource(), true)))
                                 .then(literal("off").executes(context -> updatePriceSetting(context.getSource(), false))))
                         .then(colorCommand())
+                        .then(themeCommand())
         ));
     }
 
@@ -54,6 +55,17 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
         }
         return command.then(literal("reset")
                 .executes(context -> updateTextColor(context.getSource(), LecternTextColor.BLACK, true)));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> themeCommand() {
+        var command = literal("theme")
+                .executes(context -> updateMenuTheme(context.getSource(), null));
+        for (LibrarianMenuTheme theme : LibrarianMenuTheme.values()) {
+            command.then(literal(theme.commandName())
+                    .executes(context -> updateMenuTheme(context.getSource(), theme)));
+        }
+        return command;
     }
 
     private static int updatePriceSetting(
@@ -79,6 +91,21 @@ public final class VisibleLibrarianTrades implements ClientModInitializer {
                 ? "Text color reset to Black."
                 : "Text color set to " + color.displayName() + ".";
         source.sendFeedback(Component.literal(message));
+        return 1;
+    }
+
+    private static int updateMenuTheme(
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source,
+            LibrarianMenuTheme theme
+    ) {
+        if (theme == null) {
+            priceDisplay.toggleMenuTheme();
+        } else {
+            priceDisplay.setMenuTheme(theme);
+        }
+        source.sendFeedback(Component.literal(
+                "VLT menu theme set to " + priceDisplay.getMenuTheme().displayName() + "."
+        ));
         return 1;
     }
 }

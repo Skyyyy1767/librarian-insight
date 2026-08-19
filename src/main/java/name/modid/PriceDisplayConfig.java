@@ -9,13 +9,15 @@ import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 import net.fabricmc.loader.api.FabricLoader;
 
-/** Small dependency-free client settings for lectern presentation. */
+/** Small dependency-free client settings for VLT presentation. */
 public final class PriceDisplayConfig {
     private static final String PRICE_KEY = "showPrice";
     private static final String TEXT_COLOR_KEY = "textColor";
+    private static final String MENU_THEME_KEY = "menuTheme";
     private final Path path;
     private boolean enabled = true;
     private LecternTextColor textColor = LecternTextColor.BLACK;
+    private LibrarianMenuTheme menuTheme = LibrarianMenuTheme.LIGHT;
 
     public PriceDisplayConfig() {
         this(FabricLoader.getInstance().getConfigDir().resolve("visible-librarian-trades.properties"));
@@ -48,6 +50,19 @@ public final class PriceDisplayConfig {
         save();
     }
 
+    public LibrarianMenuTheme getMenuTheme() {
+        return menuTheme;
+    }
+
+    public void setMenuTheme(LibrarianMenuTheme menuTheme) {
+        this.menuTheme = menuTheme;
+        save();
+    }
+
+    public void toggleMenuTheme() {
+        setMenuTheme(menuTheme.toggled());
+    }
+
     private void load() {
         if (!Files.isRegularFile(path)) {
             return;
@@ -58,8 +73,10 @@ public final class PriceDisplayConfig {
             enabled = Boolean.parseBoolean(properties.getProperty(PRICE_KEY, "true"));
             textColor = LecternTextColor.parse(properties.getProperty(TEXT_COLOR_KEY))
                     .orElse(LecternTextColor.BLACK);
+            menuTheme = LibrarianMenuTheme.parse(properties.getProperty(MENU_THEME_KEY))
+                    .orElse(LibrarianMenuTheme.LIGHT);
         } catch (IOException exception) {
-            VisibleLibrarianTrades.LOGGER.warn("Could not read price display config {}; using default ON", path, exception);
+            VisibleLibrarianTrades.LOGGER.warn("Could not read VLT client config {}; using defaults", path, exception);
         }
     }
 
@@ -67,6 +84,7 @@ public final class PriceDisplayConfig {
         Properties properties = new Properties();
         properties.setProperty(PRICE_KEY, Boolean.toString(enabled));
         properties.setProperty(TEXT_COLOR_KEY, textColor.commandName());
+        properties.setProperty(MENU_THEME_KEY, menuTheme.commandName());
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Files.createDirectories(path.getParent());
