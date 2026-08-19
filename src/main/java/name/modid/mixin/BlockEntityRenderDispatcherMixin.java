@@ -62,7 +62,7 @@ public class BlockEntityRenderDispatcherMixin {
         poseStack.translate(0.0F, 0.40F, 0.350F);
         poseStack.scale(0.010416667F, -0.010416667F, 0.010416667F);
         poseStack.mulPose(Axis.XP.rotationDegrees(67.5F));
-        boolean hasPrice = display.emeraldCost() > 0;
+        boolean hasPrice = VisibleLibrarianTrades.priceDisplay.isEnabled() && display.emeraldCost() > 0;
         int rowCount = layout.lines().length + (hasPrice ? 1 : 0);
         float firstY = NAME_CENTER_Y - ((rowCount - 1) * LINE_SPACING) / 2.0F;
         for (int index = 0; index < layout.lines().length; index++) {
