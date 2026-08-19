@@ -10,7 +10,8 @@
         "VillagerRenderStateMixin",
         "VillagerRendererMixin",
         "RenderLayerInvoker",
-        "VillagerProfessionLayerMixin"
+        "VillagerProfessionLayerMixin",
+        "MerchantScreenAccessor"
 	],
 
 	"injectors": {
