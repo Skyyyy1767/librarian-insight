@@ -14,7 +14,7 @@ import net.minecraft.world.item.enchantment.Enchantment;
 
 /** Associates the original mod's nearest tracked librarian with each lectern. */
 public final class LecternManager {
-    public record DisplayText(String text, boolean maxed) {}
+    public record DisplayText(String text, boolean maxed, int emeraldCost, int bookCost) {}
 
     private final Map<BlockPos, @Nullable DisplayText> displays = new HashMap<>();
     private int clock;
@@ -49,7 +49,7 @@ public final class LecternManager {
 
     private static DisplayText format(@Nullable EnchantmentInfo enchantment) {
         if (enchantment == null) {
-            return new DisplayText(Items.BOOKSHELF.getName(Items.BOOKSHELF.getDefaultInstance()).getString(), false);
+            return new DisplayText(Items.BOOKSHELF.getName(Items.BOOKSHELF.getDefaultInstance()).getString(), false, 0, 0);
         }
         String name = enchantment.enchantment().unwrapKey()
                 .map(key -> Component.translatable(Util.makeDescriptionId("enchantment", key.identifier())).getString())
@@ -57,7 +57,7 @@ public final class LecternManager {
         if (enchantment.enchantment().value().getMaxLevel() != 1) {
             name += " " + Component.translatable("enchantment.level." + enchantment.level()).getString();
         }
-        return new DisplayText(name, enchantment.isMaxLevel());
+        return new DisplayText(name, enchantment.isMaxLevel(), enchantment.emeraldCost(), enchantment.bookCost());
     }
 
     private void clientTick(Minecraft minecraft) {

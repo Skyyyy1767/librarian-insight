@@ -33,13 +33,23 @@ public abstract class ClientPacketListenerMixin {
             return;
         }
         EnchantmentInfo found = null;
+        findEnchantedBook:
         for (MerchantOffer offer : packet.getOffers()) {
             ItemStack result = offer.getResult();
             if (result.is(Items.ENCHANTED_BOOK)) {
                 ItemEnchantments enchantments = result.getOrDefault(DataComponents.STORED_ENCHANTMENTS, ItemEnchantments.EMPTY);
                 for (Holder<Enchantment> enchantment : enchantments.keySet()) {
-                    found = new EnchantmentInfo(enchantment, enchantments.getLevel(enchantment));
-                    break;
+                    ItemStack costA = offer.getCostA();
+                    ItemStack costB = offer.getCostB();
+                    int emeraldCost = countItem(costA, costB, Items.EMERALD);
+                    int bookCost = countItem(costA, costB, Items.BOOK);
+                    found = new EnchantmentInfo(
+                            enchantment,
+                            enchantments.getLevel(enchantment),
+                            emeraldCost,
+                            bookCost
+                    );
+                    break findEnchantedBook;
                 }
             }
         }
@@ -47,6 +57,10 @@ public abstract class ClientPacketListenerMixin {
         if (manager.isTrackingDone()) {
             VisibleLibrarianTrades.lecternManager.updateAllJobSites();
         }
+    }
+
+    private static int countItem(ItemStack first, ItemStack second, net.minecraft.world.item.Item item) {
+        return (first.is(item) ? first.getCount() : 0) + (second.is(item) ? second.getCount() : 0);
     }
 
     @Inject(method = "handleOpenScreen", at = @At("HEAD"), cancellable = true)
