@@ -1,6 +1,6 @@
 package librarianinsight.status;
 
-/** Pure calculations mirroring the relevant vanilla 26.3 price and restock rules. */
+/** Pure calculations mirroring the relevant vanilla 1.21.1 price and restock rules. */
 public final class VillagerStatusCalculations {
     public static final int MAX_RESTOCKS = 2;
     public static final long SECOND_RESTOCK_DELAY_TICKS = 2400L;

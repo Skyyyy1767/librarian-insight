@@ -16,23 +16,22 @@ import librarianinsight.trade.LibrarianMinimumPrice;
 import librarianinsight.trade.LibrarianTradeCatalog;
 import librarianinsight.trade.LibrarianTradeMode;
 import librarianinsight.trade.LibrarianTradeReference;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.npc.villager.VillagerData;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraft.world.level.block.Blocks;
-import org.jspecify.annotations.Nullable;
 
 /** Icon-first, read-only librarian reference browser for an empty lectern. */
 public final class LibrarianInfoScreen extends Screen {
@@ -49,8 +48,8 @@ public final class LibrarianInfoScreen extends Screen {
     private int selectedCurrent;
     private int currentScroll;
     private int selectedProfessionLevel = 1;
-    private @Nullable LibrarianTradeReference selectedPossible;
-    private @Nullable LibrarianEnchantedBookReference selectedBook;
+    private LibrarianTradeReference selectedPossible;
+    private LibrarianEnchantedBookReference selectedBook;
     private boolean browsingBooks;
     private int bookProfessionLevel = 1;
     private int bookScroll;
@@ -64,16 +63,16 @@ public final class LibrarianInfoScreen extends Screen {
     private int statusMaxScroll;
     private int statusDetailScroll;
     private int statusDetailMaxScroll;
-    private @Nullable Rect activeDetailBounds;
-    private @Nullable Rect activePossibleGridBounds;
-    private @Nullable Rect activeStatusBounds;
-    private @Nullable Rect activeClickClip;
-    private @Nullable Rect activeTooltipClip;
-    private @Nullable KnownLibrarianSnapshot cachedSnapshot;
+    private Rect activeDetailBounds;
+    private Rect activePossibleGridBounds;
+    private Rect activeStatusBounds;
+    private Rect activeClickClip;
+    private Rect activeTooltipClip;
+    private KnownLibrarianSnapshot cachedSnapshot;
     private MerchantOffers cachedOffers = new MerchantOffers();
-    private @Nullable UUID refreshRequestedFor;
+    private UUID refreshRequestedFor;
     private long refreshRequestedAt = Long.MIN_VALUE;
-    private @Nullable StatusCard selectedStatusCard;
+    private StatusCard selectedStatusCard;
     private IntegratedVillagerStatusService.Result statusResult;
     private boolean statusRequestInFlight;
     private long statusRequestGeneration;
@@ -91,8 +90,8 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
         palette = LibrarianMenuPalette.forTheme(LibrarianInsight.priceDisplay.getMenuTheme());
         hitTargets.clear();
         activeDetailBounds = null;
@@ -108,7 +107,7 @@ public final class LibrarianInfoScreen extends Screen {
 
         Layout layout = layout();
         graphics.fill(layout.x(), layout.y(), layout.right(), layout.bottom(), palette.screenBackground());
-        graphics.outline(layout.x(), layout.y(), layout.width(), layout.height(), palette.border());
+        graphics.renderOutline(layout.x(), layout.y(), layout.width(), layout.height(), palette.border());
         graphics.enableScissor(layout.x() + 1, layout.y() + 1, layout.right() - 1, layout.bottom() - 1);
         drawFittedText(graphics, title.getString(),
                 new Rect(layout.x() + 5, layout.y() + 3, layout.width() - 10, 15),
@@ -144,7 +143,7 @@ public final class LibrarianInfoScreen extends Screen {
         graphics.disableScissor();
     }
 
-    private void drawCurrentTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+    private void drawCurrentTab(GuiGraphics graphics, Rect content, int mouseX, int mouseY) {
         LecternAssociation association = LibrarianInsight.lecternManager.getAssociationForMenu(lecternPos);
         KnownLibrarianSnapshot snapshot = association == null
                 ? null
@@ -207,7 +206,7 @@ public final class LibrarianInfoScreen extends Screen {
             boolean hovered = visibleRow != null && visibleRow.contains(mouseX, mouseY);
             graphics.fill(row.x(), row.y(), row.right(), row.bottom(),
                     offerIndex == selectedCurrent ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(row.x(), row.y(), row.width(), row.height(),
+            graphics.renderOutline(row.x(), row.y(), row.width(), row.height(),
                     offerIndex == selectedCurrent ? palette.selectedBorder() : palette.separator());
             drawOfferFlow(graphics, offer, row.x() + 3, row.y() + 5, mouseX, mouseY, row.width(), row.height());
             if (visibleRow != null) {
@@ -223,7 +222,7 @@ public final class LibrarianInfoScreen extends Screen {
         drawCurrentDetail(graphics, detail, cachedOffers.get(selectedCurrent), snapshot, association, mouseX, mouseY);
     }
 
-    private void drawStatusTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+    private void drawStatusTab(GuiGraphics graphics, Rect content, int mouseX, int mouseY) {
         requestStatusSnapshot(false);
         panel(graphics, content);
         if (selectedStatusCard == null) {
@@ -233,7 +232,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void drawStatusDashboard(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+    private void drawStatusDashboard(GuiGraphics graphics, Rect content, int mouseX, int mouseY) {
         drawFittedText(graphics, "Villager Status",
                 new Rect(content.x() + 6, content.y() + 3, content.width() - 12, 13),
                 1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
@@ -265,7 +264,7 @@ public final class LibrarianInfoScreen extends Screen {
             boolean hovered = visible != null && visible.contains(mouseX, mouseY);
             graphics.fill(box.x(), box.y(), box.right(), box.bottom(),
                     hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(box.x(), box.y(), box.width(), box.height(),
+            graphics.renderOutline(box.x(), box.y(), box.width(), box.height(),
                     hovered ? palette.selectedBorder() : palette.separator());
             drawFittedText(graphics, card.title,
                     new Rect(box.x() + 3, box.y() + 3, box.width() - 6, 12),
@@ -288,7 +287,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawStatusDetail(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Rect content,
             StatusCard card,
             int mouseX,
@@ -444,7 +443,7 @@ public final class LibrarianInfoScreen extends Screen {
         return rows;
     }
 
-    private void addRestockDetails(List<StatusDetailRow> rows, @Nullable VillagerStatusSnapshot snapshot) {
+    private void addRestockDetails(List<StatusDetailRow> rows, VillagerStatusSnapshot snapshot) {
         rows.add(detail("Restock Status", Items.CLOCK.getDefaultInstance(), Tone.HEADING, true));
         if (snapshot == null) {
             rows.add(detail("Exact restock counters are available in single-player. This remote server does not provide them.", null, Tone.MUTED, false));
@@ -468,8 +467,8 @@ public final class LibrarianInfoScreen extends Screen {
 
     private void addTradeDetails(
             List<StatusDetailRow> rows,
-            @Nullable VillagerStatusSnapshot snapshot,
-            @Nullable KnownLibrarianSnapshot known
+            VillagerStatusSnapshot snapshot,
+            KnownLibrarianSnapshot known
     ) {
         rows.add(detail("Trade Availability", Items.ENCHANTED_BOOK.getDefaultInstance(), Tone.HEADING, true));
         if (snapshot != null && !snapshot.trades().isEmpty()) {
@@ -496,8 +495,8 @@ public final class LibrarianInfoScreen extends Screen {
 
     private void addStandingDetails(
             List<StatusDetailRow> rows,
-            @Nullable VillagerStatusSnapshot snapshot,
-            @Nullable KnownLibrarianSnapshot known
+            VillagerStatusSnapshot snapshot,
+            KnownLibrarianSnapshot known
     ) {
         rows.add(detail("Player Standing", Items.EMERALD.getDefaultInstance(), Tone.HEADING, true));
         if (snapshot == null) {
@@ -539,8 +538,8 @@ public final class LibrarianInfoScreen extends Screen {
 
     private void addLevelDetails(
             List<StatusDetailRow> rows,
-            @Nullable VillagerStatusSnapshot snapshot,
-            @Nullable KnownLibrarianSnapshot known
+            VillagerStatusSnapshot snapshot,
+            KnownLibrarianSnapshot known
     ) {
         rows.add(detail("Librarian Level", Items.EXPERIENCE_BOTTLE.getDefaultInstance(), Tone.HEADING, true));
         int level = snapshot != null ? snapshot.professionLevel() : known == null ? 0 : known.villagerLevel();
@@ -559,7 +558,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void addHeroDetails(List<StatusDetailRow> rows, @Nullable VillagerStatusSnapshot snapshot) {
+    private void addHeroDetails(List<StatusDetailRow> rows, VillagerStatusSnapshot snapshot) {
         rows.add(detail("Hero of the Village", Items.TOTEM_OF_UNDYING.getDefaultInstance(), Tone.HEADING, true));
         VillagerStatusSnapshot.Hero hero = snapshot != null ? snapshot.hero() : clientHero();
         if (!hero.active()) {
@@ -574,7 +573,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawCurrentDetail(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Rect detail,
             MerchantOffer offer,
             KnownLibrarianSnapshot snapshot,
@@ -654,7 +653,7 @@ public final class LibrarianInfoScreen extends Screen {
         drawPixelScrollbar(graphics, viewport, contentHeight, currentDetailScroll);
     }
 
-    private void drawAssociationNote(GuiGraphicsExtractor graphics, Rect detail, LecternAssociation association) {
+    private void drawAssociationNote(GuiGraphics graphics, Rect detail, LecternAssociation association) {
         Rect inner = inset(detail, 6);
         drawFittedText(graphics, "Association", new Rect(inner.x(), inner.y(), inner.width(), 13),
                 1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
@@ -672,7 +671,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void drawEmptyCurrentDetail(GuiGraphicsExtractor graphics, Rect detail) {
+    private void drawEmptyCurrentDetail(GuiGraphics graphics, Rect detail) {
         Rect inner = inset(detail, 6);
         drawFittedText(graphics, "Current Librarian", new Rect(inner.x(), inner.y(), inner.width(), 18),
                 2, MIN_TEXT_SCALE, TextAlignment.LEFT, false, palette.headingText());
@@ -684,7 +683,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void drawPossibleTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
+    private void drawPossibleTab(GuiGraphics graphics, Rect content, int mouseX, int mouseY) {
         LibrarianTradeMode mode = currentMode();
         int levelY = content.y();
         int levelWidth = Math.max(1, (content.width() - 8) / 5);
@@ -715,7 +714,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void drawPossibleGrid(GuiGraphicsExtractor graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
+    private void drawPossibleGrid(GuiGraphics graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
         int gridWidth = Math.max(1, Math.min(218, (body.width() - 5) / 2));
         Rect grid = new Rect(body.x(), body.y(), gridWidth, body.height());
         Rect detail = new Rect(grid.right() + 5, body.y(), body.right() - grid.right() - 5, body.height());
@@ -725,7 +724,7 @@ public final class LibrarianInfoScreen extends Screen {
                 new Rect(grid.x() + 6, grid.y() + 3, grid.width() - 12, 14),
                 1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
 
-        Optional<net.minecraft.resources.ResourceKey<net.minecraft.world.entity.npc.villager.VillagerType>> type = currentVillagerType();
+        Optional<net.minecraft.world.entity.npc.VillagerType> type = currentVillagerType();
         List<LibrarianTradeReference> trades = LibrarianTradeCatalog.possibleTradesAtLevel(
                 mode, type, selectedProfessionLevel
         );
@@ -763,7 +762,7 @@ public final class LibrarianInfoScreen extends Screen {
             boolean hovered = visibleCell != null && visibleCell.contains(mouseX, mouseY);
             graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(),
                     selected ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(cell.x(), cell.y(), cell.width(), cell.height(),
+            graphics.renderOutline(cell.x(), cell.y(), cell.width(), cell.height(),
                     selected ? palette.selectedBorder() : palette.separator());
             ItemStack icon = trade.iconStack();
             int iconX = cell.x() + (cell.width() - 16) / 2;
@@ -791,7 +790,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawPossibleDetail(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Rect detail,
             LibrarianTradeReference trade,
             int mouseX,
@@ -881,7 +880,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void drawBookBrowser(GuiGraphicsExtractor graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
+    private void drawBookBrowser(GuiGraphics graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
         int listWidth = Math.max(1, Math.min(245, (body.width() - 5) / 2));
         Rect listPanel = new Rect(body.x(), body.y(), listWidth, body.height());
         Rect detail = new Rect(listPanel.right() + 5, body.y(), body.right() - listPanel.right() - 5, body.height());
@@ -955,7 +954,7 @@ public final class LibrarianInfoScreen extends Screen {
         TextLayout variant = TextLayout.EMPTY;
         if (!book.villagerTypes().isEmpty()) {
             String variants = book.villagerTypes().stream()
-                    .map(type -> titleCase(type.identifier().getPath()))
+                    .map(type -> titleCase(BuiltInRegistries.VILLAGER_TYPE.getKey(type).getPath()))
                     .sorted()
                     .reduce((first, second) -> first + ", " + second)
                     .orElse("");
@@ -1006,7 +1005,7 @@ public final class LibrarianInfoScreen extends Screen {
         );
     }
 
-    private Optional<net.minecraft.resources.ResourceKey<net.minecraft.world.entity.npc.villager.VillagerType>> currentVillagerType() {
+    private Optional<net.minecraft.world.entity.npc.VillagerType> currentVillagerType() {
         LecternAssociation association = LibrarianInsight.lecternManager.getAssociationForMenu(lecternPos);
         if (association == null) {
             return Optional.empty();
@@ -1015,7 +1014,7 @@ public final class LibrarianInfoScreen extends Screen {
         return snapshot == null ? Optional.empty() : snapshot.villagerType();
     }
 
-    private void updateCachedOffers(@Nullable KnownLibrarianSnapshot snapshot) {
+    private void updateCachedOffers(KnownLibrarianSnapshot snapshot) {
         if (snapshot != cachedSnapshot) {
             cachedSnapshot = snapshot;
             cachedOffers = snapshot == null ? new MerchantOffers() : snapshot.offersCopy();
@@ -1041,7 +1040,7 @@ public final class LibrarianInfoScreen extends Screen {
         lastStatusRequestAt = now;
         LibrarianInsight.villagerStatusService.request(lecternPos, fallback, result -> {
             if (generation != statusRequestGeneration
-                    || minecraft.gui.screen() != this
+                    || minecraft.screen != this
                     || minecraft.level != requestedLevel
                     || minecraft.level == null
                     || !minecraft.level.getBlockState(lecternPos).is(Blocks.LECTERN)) {
@@ -1064,11 +1063,11 @@ public final class LibrarianInfoScreen extends Screen {
         });
     }
 
-    private @Nullable VillagerStatusSnapshot integratedStatus() {
+    private VillagerStatusSnapshot integratedStatus() {
         return statusResult == null ? null : statusResult.snapshot();
     }
 
-    private @Nullable LecternAssociation statusAssociation() {
+    private LecternAssociation statusAssociation() {
         LecternAssociation retained = LibrarianInsight.lecternManager.getRetainedAssociation(lecternPos);
         if (retained != null) {
             return retained;
@@ -1081,7 +1080,7 @@ public final class LibrarianInfoScreen extends Screen {
         return LibrarianInsight.lecternManager.getAssociationForMenu(lecternPos);
     }
 
-    private @Nullable KnownLibrarianSnapshot statusKnownSnapshot() {
+    private KnownLibrarianSnapshot statusKnownSnapshot() {
         VillagerStatusSnapshot integrated = integratedStatus();
         if (integrated != null) {
             KnownLibrarianSnapshot known = LibrarianInsight.enchantmentManager.getOfferSnapshot(integrated.villagerUuid());
@@ -1095,7 +1094,7 @@ public final class LibrarianInfoScreen extends Screen {
                 : LibrarianInsight.enchantmentManager.getOfferSnapshot(association.villagerUuid());
     }
 
-    private @Nullable Villager clientVillager(@Nullable LecternAssociation association) {
+    private Villager clientVillager(LecternAssociation association) {
         if (association == null) {
             return null;
         }
@@ -1107,9 +1106,9 @@ public final class LibrarianInfoScreen extends Screen {
         return null;
     }
 
-    private float @Nullable [] statusHealth(
-            @Nullable VillagerStatusSnapshot snapshot,
-            @Nullable LecternAssociation association
+    private float [] statusHealth(
+            VillagerStatusSnapshot snapshot,
+            LecternAssociation association
     ) {
         if (snapshot != null) {
             return new float[]{snapshot.health(), snapshot.maximumHealth()};
@@ -1130,7 +1129,7 @@ public final class LibrarianInfoScreen extends Screen {
                 );
     }
 
-    private static int availableOffers(@Nullable KnownLibrarianSnapshot known) {
+    private static int availableOffers(KnownLibrarianSnapshot known) {
         if (known == null) {
             return 0;
         }
@@ -1213,7 +1212,7 @@ public final class LibrarianInfoScreen extends Screen {
 
     private static StatusDetailRow detail(
             String text,
-            @Nullable ItemStack icon,
+            ItemStack icon,
             Tone tone,
             boolean heading
     ) {
@@ -1278,7 +1277,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawOfferFlow(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             MerchantOffer offer,
             int x,
             int y,
@@ -1295,12 +1294,12 @@ public final class LibrarianInfoScreen extends Screen {
         drawIcon(graphics, first, cursor, y, mouseX, mouseY, true);
         cursor += 19;
         if (!second.isEmpty()) {
-            graphics.text(font, "+", cursor, y + 4, palette.primaryText(), false);
+            graphics.drawString(font, "+", cursor, y + 4, palette.primaryText(), false);
             cursor += 9;
             drawIcon(graphics, second, cursor, y, mouseX, mouseY, true);
             cursor += 20;
         }
-        graphics.text(font, "→", cursor, y + 4, palette.primaryText(), false);
+        graphics.drawString(font, "→", cursor, y + 4, palette.primaryText(), false);
         cursor += 12;
         ItemStack result = offer.getResult();
         drawIcon(graphics, result, cursor, y, mouseX, mouseY, true);
@@ -1340,7 +1339,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawCost(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             ItemStack first,
             Optional<ItemStack> second,
             int x,
@@ -1352,18 +1351,18 @@ public final class LibrarianInfoScreen extends Screen {
         drawIcon(graphics, first, x, y, mouseX, mouseY, true);
         int cursor = x + 22;
         if (second.isPresent() && !second.get().isEmpty()) {
-            graphics.text(font, "+", cursor, y + 4, palette.primaryText(), false);
+            graphics.drawString(font, "+", cursor, y + 4, palette.primaryText(), false);
             cursor += 10;
             drawIcon(graphics, second.get(), cursor, y, mouseX, mouseY, true);
             cursor += 21;
         }
         if (label) {
-            graphics.text(font, "minimum", cursor, y + 4, palette.secondaryText(), false);
+            graphics.drawString(font, "minimum", cursor, y + 4, palette.secondaryText(), false);
         }
     }
 
     private void drawNaturalCost(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             LibrarianTradeReference.NaturalCost cost,
             int x,
             int y,
@@ -1374,14 +1373,14 @@ public final class LibrarianInfoScreen extends Screen {
         int cursor = x;
         cursor = drawItemRange(graphics, cost.first(), cursor, y, mouseX, mouseY, showRange);
         if (cost.second().isPresent()) {
-            graphics.text(font, "+", cursor + 1, y + 4, palette.primaryText(), false);
+            graphics.drawString(font, "+", cursor + 1, y + 4, palette.primaryText(), false);
             cursor += 11;
             drawItemRange(graphics, cost.second().get(), cursor, y, mouseX, mouseY, showRange);
         }
     }
 
     private int drawItemRange(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             LibrarianTradeReference.ItemRange range,
             int x,
             int y,
@@ -1393,7 +1392,7 @@ public final class LibrarianInfoScreen extends Screen {
         drawIcon(graphics, stack, x, y, mouseX, mouseY, !showRange || range.count().isFixed());
         int cursor = x + 19;
         if (showRange && !range.count().isFixed()) {
-            graphics.text(font, rangeText(range.count()), cursor, y + 4, palette.primaryText(), false);
+            graphics.drawString(font, rangeText(range.count()), cursor, y + 4, palette.primaryText(), false);
             cursor += font.width(rangeText(range.count())) + 3;
         } else {
             cursor += 3;
@@ -1402,7 +1401,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawIcon(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             ItemStack stack,
             int x,
             int y,
@@ -1413,16 +1412,16 @@ public final class LibrarianInfoScreen extends Screen {
         if (stack.isEmpty()) {
             return;
         }
-        graphics.fakeItem(stack, x, y);
-        graphics.itemDecorations(font, stack, x, y, showOne && stack.getCount() == 1 ? "1" : null);
+        graphics.renderFakeItem(stack, x, y);
+        graphics.renderItemDecorations(font, stack, x, y, showOne && stack.getCount() == 1 ? "1" : null);
         if ((activeTooltipClip == null || activeTooltipClip.contains(mouseX, mouseY))
                 && mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
-            graphics.setTooltipForNextFrame(font, stack, mouseX, mouseY);
+            graphics.renderTooltip(font, stack, mouseX, mouseY);
         }
     }
 
     private void drawTab(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Rect rect,
             String label,
             boolean active,
@@ -1433,7 +1432,7 @@ public final class LibrarianInfoScreen extends Screen {
         boolean hovered = rect.contains(mouseX, mouseY);
         graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(),
                 active ? palette.selected() : hovered ? palette.hovered() : palette.panel());
-        graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(),
+        graphics.renderOutline(rect.x(), rect.y(), rect.width(), rect.height(),
                 active ? palette.selectedBorder() : palette.border());
         drawFittedText(graphics, label, inset(rect, 1),
                 2, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.primaryText());
@@ -1441,7 +1440,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawSmallButton(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Rect rect,
             String label,
             boolean active,
@@ -1452,7 +1451,7 @@ public final class LibrarianInfoScreen extends Screen {
         boolean hovered = rect.contains(mouseX, mouseY);
         graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(),
                 active ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-        graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(),
+        graphics.renderOutline(rect.x(), rect.y(), rect.width(), rect.height(),
                 active ? palette.selectedBorder() : palette.border());
         drawFittedText(graphics, label, inset(rect, 2),
                 2, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.primaryText());
@@ -1462,12 +1461,12 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void panel(GuiGraphicsExtractor graphics, Rect rect) {
+    private void panel(GuiGraphics graphics, Rect rect) {
         graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(), palette.panel());
-        graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(), palette.border());
+        graphics.renderOutline(rect.x(), rect.y(), rect.width(), rect.height(), palette.border());
     }
 
-    private void drawScrollbar(GuiGraphicsExtractor graphics, Rect area, int total, int visible, int first) {
+    private void drawScrollbar(GuiGraphics graphics, Rect area, int total, int visible, int first) {
         if (total <= visible || visible <= 0) {
             return;
         }
@@ -1479,7 +1478,7 @@ public final class LibrarianInfoScreen extends Screen {
         graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, palette.scrollbarThumb());
     }
 
-    private void drawPixelScrollbar(GuiGraphicsExtractor graphics, Rect area, int contentHeight, int scroll) {
+    private void drawPixelScrollbar(GuiGraphics graphics, Rect area, int contentHeight, int scroll) {
         if (contentHeight <= area.height() || area.height() <= 0) {
             return;
         }
@@ -1519,7 +1518,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private int drawFittedText(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             String text,
             Rect bounds,
             int maxLines,
@@ -1534,7 +1533,7 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void drawTextLayout(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             TextLayout layout,
             Rect bounds,
             TextAlignment alignment,
@@ -1548,18 +1547,18 @@ public final class LibrarianInfoScreen extends Screen {
                 ? bounds.y() + Math.max(0, (bounds.height() - layout.height()) / 2)
                 : bounds.y();
         graphics.enableScissor(bounds.x(), bounds.y(), bounds.right(), bounds.bottom());
-        graphics.pose().pushMatrix();
-        graphics.pose().translate(bounds.x(), startY);
-        graphics.pose().scale(layout.scale(), layout.scale());
+        graphics.pose().pushPose();
+        graphics.pose().translate(bounds.x(), startY, 0.0F);
+        graphics.pose().scale(layout.scale(), layout.scale(), 1.0F);
         float logicalWidth = bounds.width() / layout.scale();
         for (int lineIndex = 0; lineIndex < layout.lines().size(); lineIndex++) {
             FormattedCharSequence line = layout.lines().get(lineIndex);
             int lineX = alignment == TextAlignment.CENTER
                     ? Math.max(0, Math.round((logicalWidth - font.width(line)) / 2.0F))
                     : 0;
-            graphics.text(font, line, lineX, lineIndex * font.lineHeight, color, false);
+            graphics.drawString(font, line, lineX, lineIndex * font.lineHeight, color, false);
         }
-        graphics.pose().popMatrix();
+        graphics.pose().popPose();
         graphics.disableScissor();
     }
 
@@ -1594,16 +1593,16 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == InputConstants.MOUSE_BUTTON_LEFT) {
             for (HitTarget target : List.copyOf(hitTargets)) {
-                if (target.bounds().contains(event.x(), event.y())) {
+                if (target.bounds().contains(mouseX, mouseY)) {
                     target.action().run();
                     return true;
                 }
             }
         }
-        return super.mouseClicked(event, doubleClick);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
@@ -1650,11 +1649,6 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     @Override
-    public boolean isInGameUi() {
-        return true;
-    }
-
-    @Override
     public void removed() {
         statusRequestGeneration++;
         statusRequestInFlight = false;
@@ -1686,7 +1680,7 @@ public final class LibrarianInfoScreen extends Screen {
         );
     }
 
-    private static @Nullable Rect intersection(Rect first, Rect second) {
+    private static Rect intersection(Rect first, Rect second) {
         int x = Math.max(first.x(), second.x());
         int y = Math.max(first.y(), second.y());
         int right = Math.min(first.right(), second.right());

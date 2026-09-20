@@ -1,27 +1,21 @@
 package librarianinsight.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
-import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
-import net.minecraft.client.renderer.blockentity.state.LecternRenderState;
-import net.minecraft.client.renderer.item.ItemStackRenderState;
-import net.minecraft.client.renderer.item.ItemStackRenderState.FoilType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.geometry.BakedQuad;
-import net.minecraft.client.resources.model.geometry.ItemQuads;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.LecternBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.LecternBlockEntity;
 import librarianinsight.LecternManager;
 import librarianinsight.LibrarianInsight;
 import org.spongepowered.asm.mixin.Mixin;
@@ -42,37 +36,39 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float PRICE_GROUP_GAP = 11.0F;
     private static final float EMERALD_AMOUNT_Y_OFFSET = 2.0F;
 
-    @Inject(method = "submit", at = @At("TAIL"))
-    private void submitLecternText(
-            BlockEntityRenderState state,
+    @Inject(method = "render", at = @At("TAIL"))
+    private <E extends BlockEntity> void renderLecternText(
+            E blockEntity,
+            float partialTick,
             PoseStack poseStack,
-            SubmitNodeCollector collector,
-            CameraRenderState camera,
+            MultiBufferSource buffers,
             CallbackInfo ci
     ) {
-        if (!(state instanceof LecternRenderState lecternState)) {
+        if (!(blockEntity instanceof LecternBlockEntity lectern)) {
             return;
         }
 
-        LecternManager.DisplayText display = LibrarianInsight.lecternManager.getTextOfLectern(lecternState.blockPos);
+        LecternManager.DisplayText display = LibrarianInsight.lecternManager.getTextOfLectern(lectern.getBlockPos());
         if (display == null) {
             return;
         }
 
         Font font = Minecraft.getInstance().font;
+        int light = lectern.getLevel() == null
+                ? 0x00F000F0
+                : LevelRenderer.getLightColor(lectern.getLevel(), lectern.getBlockPos());
         String text = display.text();
         TextLayout layout = createLayout(font, text);
 
         poseStack.pushPose();
         // Exact transform order from Saphjyr's 1.19.2 renderer:
         // translate -> Y rotation -> translate -> scale -> X rotation.
-        // 26.3 stores FACING.getClockWise().toYRot(), which is 90 degrees
-        // ahead of the original FACING.asRotation() value.
         poseStack.translate(0.5F, 0.5F, 0.5F);
-        poseStack.rotateDegrees(Axis.YP, 90.0F - lecternState.yRot);
+        poseStack.mulPose(Axis.YP.rotationDegrees(
+                -lectern.getBlockState().getValue(LecternBlock.FACING).toYRot()));
         poseStack.translate(0.0F, 0.40F, 0.350F);
         poseStack.scale(0.010416667F, -0.010416667F, 0.010416667F);
-        poseStack.rotateDegrees(Axis.XP, 67.5F);
+        poseStack.mulPose(Axis.XP.rotationDegrees(67.5F));
         boolean hasPrice = LibrarianInsight.priceDisplay.isEnabled() && display.emeraldCost() > 0;
         int rowCount = layout.lines().length + (hasPrice ? 1 : 0);
         float firstY = NAME_CENTER_Y - ((rowCount - 1) * LINE_SPACING) / 2.0F;
@@ -82,26 +78,26 @@ public class BlockEntityRenderDispatcherMixin {
             poseStack.pushPose();
             poseStack.translate(0.0F, firstY + index * LINE_SPACING, 0.0F);
             poseStack.scale(layout.scale(), layout.scale(), 1.0F);
-            collector.submitText(
-                    poseStack,
+            font.drawInBatch(
+                    Component.literal(line),
                     -width / 2.0F,
                     -font.lineHeight / 2.0F,
-                    Component.literal(line).getVisualOrderText(),
-                    false,
-                    Font.DisplayMode.NORMAL,
-                    lecternState.lightCoords,
                     LibrarianInsight.priceDisplay.getTextColor().argb(),
+                    false,
+                    poseStack.last().pose(),
+                    buffers,
+                    Font.DisplayMode.NORMAL,
                     0,
-                    0xFFFFFFFF
+                    light
             );
             poseStack.popPose();
         }
         if (hasPrice) {
             renderPriceRow(
                     poseStack,
-                    collector,
+                    buffers,
                     font,
-                    lecternState.lightCoords,
+                    light,
                     firstY + layout.lines().length * LINE_SPACING,
                     display.emeraldCost(),
                     display.bookCost()
@@ -112,7 +108,7 @@ public class BlockEntityRenderDispatcherMixin {
 
     private static void renderPriceRow(
             PoseStack poseStack,
-            SubmitNodeCollector collector,
+            MultiBufferSource buffers,
             Font font,
             int light,
             float centerY,
@@ -126,21 +122,21 @@ public class BlockEntityRenderDispatcherMixin {
         float rowWidth = emeraldPart + (bookCost > 0 ? PRICE_GROUP_GAP + bookPart : 0.0F);
         float cursor = -rowWidth / 2.0F;
 
-        renderItemIcon(poseStack, collector, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+        renderItemIcon(poseStack, buffers, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
         cursor += PRICE_ICON_SIZE;
         if (!emeraldText.isEmpty()) {
             cursor += ICON_AMOUNT_GAP;
-            renderPriceText(poseStack, collector, font, emeraldText, cursor, centerY + EMERALD_AMOUNT_Y_OFFSET, light);
+            renderPriceText(poseStack, buffers, font, emeraldText, cursor, centerY + EMERALD_AMOUNT_Y_OFFSET, light);
             cursor += font.width(emeraldText);
         }
 
         if (bookCost > 0) {
             cursor += PRICE_GROUP_GAP;
-            renderItemIcon(poseStack, collector, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+            renderItemIcon(poseStack, buffers, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
             cursor += PRICE_ICON_SIZE;
             if (!bookText.isEmpty()) {
                 cursor += ICON_AMOUNT_GAP;
-                renderPriceText(poseStack, collector, font, bookText, cursor, centerY, light);
+                renderPriceText(poseStack, buffers, font, bookText, cursor, centerY, light);
             }
         }
     }
@@ -155,7 +151,7 @@ public class BlockEntityRenderDispatcherMixin {
 
     private static void renderItemIcon(
             PoseStack poseStack,
-            SubmitNodeCollector collector,
+            MultiBufferSource buffers,
             ItemStack stack,
             float centerX,
             float centerY
@@ -164,79 +160,42 @@ public class BlockEntityRenderDispatcherMixin {
         if (minecraft.player == null) {
             return;
         }
-        ItemStackRenderState itemState = new ItemStackRenderState();
-        minecraft.getItemModelResolver().updateForLiving(itemState, stack, ItemDisplayContext.FIXED, minecraft.player);
         poseStack.pushPose();
         poseStack.translate(centerX, centerY, -0.1F);
         poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
-        itemState.submit(
-                poseStack,
-                new FullBrightItemCollector(collector),
-                LightCoordsUtil.FULL_BRIGHT,
+        minecraft.getItemRenderer().renderStatic(
+                stack,
+                ItemDisplayContext.FIXED,
+                LightTexture.FULL_BRIGHT,
                 OverlayTexture.NO_OVERLAY,
+                poseStack,
+                buffers,
+                minecraft.level,
                 0
         );
         poseStack.popPose();
     }
 
-    /** Preserves the resolved item model and transforms while bypassing world directional lighting. */
-    private static final class FullBrightItemCollector extends SubmitNodeStorage {
-        private final SubmitNodeCollector delegate;
-
-        private FullBrightItemCollector(SubmitNodeCollector delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public void submitItem(
-                PoseStack itemPose,
-                ItemDisplayContext displayContext,
-                int lightCoords,
-                int overlayCoords,
-                int outlineColor,
-                int[] tintLayers,
-                ItemQuads quads,
-                FoilType foilType
-        ) {
-            for (BakedQuad quad : quads.all()) {
-                QuadInstance instance = new QuadInstance();
-                instance.setColor(colorFor(quad, tintLayers));
-                instance.setLightCoords(LightCoordsUtil.FULL_BRIGHT);
-                instance.setOverlayCoords(OverlayTexture.NO_OVERLAY);
-                delegate.submitCustomGeometry(
-                        itemPose,
-                        RenderTypes.eyes(quad.materialInfo().sprite().atlasLocation()),
-                        (pose, vertices) -> vertices.putBakedQuad(pose, quad, instance)
-                );
-            }
-        }
-
-        private static int colorFor(BakedQuad quad, int[] tintLayers) {
-            int tintIndex = quad.materialInfo().tintIndex();
-            return tintIndex >= 0 && tintIndex < tintLayers.length ? tintLayers[tintIndex] : 0xFFFFFFFF;
-        }
-    }
-
     private static void renderPriceText(
             PoseStack poseStack,
-            SubmitNodeCollector collector,
+            MultiBufferSource buffers,
             Font font,
             String text,
             float x,
             float centerY,
             int light
     ) {
-        collector.submitText(
-                poseStack,
+        font.drawInBatch(
+                Component.literal(text),
                 x,
                 centerY - font.lineHeight / 2.0F,
-                Component.literal(text).getVisualOrderText(),
-                false,
-                Font.DisplayMode.NORMAL,
-                light,
                 0xFF000000,
+                false,
+                poseStack.last().pose(),
+                buffers,
+                Font.DisplayMode.NORMAL,
                 0,
-                0xFFFFFFFF
+                light
         );
     }
 

@@ -5,33 +5,33 @@ import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.item.trading.MerchantOffers;
 
 /** Preserves the original mod's client-side trade-query queue. */
 public final class EnchantmentManager {
-    private final Map<Villager, @Nullable EnchantmentInfo> enchantments = new IdentityHashMap<>();
+    private final Map<Villager, EnchantmentInfo> enchantments = new IdentityHashMap<>();
     private final Set<Villager> resolved = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-    private final Map<UUID, @Nullable EnchantmentInfo> enchantmentsByUuid = new HashMap<>();
+    private final Map<UUID, EnchantmentInfo> enchantmentsByUuid = new HashMap<>();
     private final Set<UUID> resolvedUuids = new java.util.HashSet<>();
     private final Queue<Villager> queryQueue = new ArrayDeque<>();
     private final Map<UUID, KnownLibrarianSnapshot> offerSnapshots = new HashMap<>();
-    private @Nullable Villager currentVillager;
-    private @Nullable Villager previousVillager;
+    private Villager currentVillager;
+    private Villager previousVillager;
     private int expectedMerchantContainerId = -1;
-    private @Nullable ClientLevel trackedLevel;
+    private ClientLevel trackedLevel;
     private boolean needsCleanup;
     private int clock;
 
@@ -50,7 +50,7 @@ public final class EnchantmentManager {
         return queryQueue.isEmpty();
     }
 
-    public void addEnchantToCurrentVillager(@Nullable EnchantmentInfo enchantment) {
+    public void addEnchantToCurrentVillager(EnchantmentInfo enchantment) {
         if (currentVillager != null) {
             enchantments.put(currentVillager, enchantment);
             resolved.add(currentVillager);
@@ -87,13 +87,13 @@ public final class EnchantmentManager {
         long gameTime = minecraft.level == null ? 0L : minecraft.level.getGameTime();
         offerSnapshots.put(currentVillager.getUUID(), new KnownLibrarianSnapshot(
                 currentVillager.getUUID(), offers,
-                currentVillager.getVillagerData().type().unwrapKey(),
+                Optional.of(currentVillager.getVillagerData().getType()),
                 villagerLevel, villagerXp,
                 showProgress, canRestock, gameTime
         ));
     }
 
-    public @Nullable KnownLibrarianSnapshot getOfferSnapshot(UUID villagerUuid) {
+    public KnownLibrarianSnapshot getOfferSnapshot(UUID villagerUuid) {
         return offerSnapshots.get(villagerUuid);
     }
 
@@ -101,19 +101,19 @@ public final class EnchantmentManager {
     public void requestOfferRefresh(UUID villagerUuid) {
         for (Villager villager : enchantments.keySet()) {
             if (villager.getUUID().equals(villagerUuid) && villager.isAlive()
-                    && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                    && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN) {
                 queueVillager(villager);
                 return;
             }
         }
     }
 
-    public @Nullable EnchantmentInfo getEnchant(Villager villager) {
+    public EnchantmentInfo getEnchant(Villager villager) {
         return enchantments.get(villager);
     }
 
     /** Returns the last resolved label data even when the client entity is unloaded. */
-    public @Nullable EnchantmentInfo getEnchant(UUID villagerUuid) {
+    public EnchantmentInfo getEnchant(UUID villagerUuid) {
         return enchantmentsByUuid.get(villagerUuid);
     }
 
@@ -176,7 +176,7 @@ public final class EnchantmentManager {
             if (entity instanceof Villager villager
                     && !villager.isBaby()
                     && villager.distanceTo(player) < 4.0F
-                    && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                    && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN) {
                 if (!enchantments.containsKey(villager)) {
                     UUID uuid = villager.getUUID();
                     enchantments.put(villager, enchantmentsByUuid.get(uuid));
@@ -195,19 +195,19 @@ public final class EnchantmentManager {
         currentVillager = villager;
         // The original mod sends an ordinary client interaction, then closes the
         // merchant screen when its offer packet arrives. This does not edit trades.
-        minecraft.gameMode.interact(minecraft.player, villager, new EntityHitResult(villager), InteractionHand.MAIN_HAND);
+        minecraft.gameMode.interact(minecraft.player, villager, InteractionHand.MAIN_HAND);
     }
 
     private void clean() {
         Set<UUID> invalidUuids = new java.util.HashSet<>();
         for (Villager villager : enchantments.keySet()) {
             if (!villager.isAlive()
-                    || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                    || villager.getVillagerData().getProfession() != VillagerProfession.LIBRARIAN) {
                 invalidUuids.add(villager.getUUID());
             }
         }
         enchantments.keySet().removeIf(villager -> !villager.isAlive()
-                || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN));
+                || villager.getVillagerData().getProfession() != VillagerProfession.LIBRARIAN);
         invalidUuids.forEach(uuid -> {
             enchantmentsByUuid.remove(uuid);
             resolvedUuids.remove(uuid);

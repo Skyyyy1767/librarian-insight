@@ -12,7 +12,7 @@
     ],
     "license": "MIT",
 	"icon": "assets/librarian_insight/icon.png",
-	"environment": "*",
+	"environment": "client",
 	"entrypoints": {
         "client": [
 			"librarianinsight.fabric.LibrarianInsightFabric"
@@ -24,7 +24,7 @@
 	"depends": {
 		"fabricloader": ">=${loader_version}",
 		"minecraft": "~${minecraft_version}",
-		"java": ">=25",
+		"java": ">=21",
 		"fabric-api": ">=${fabric_api_version}"
 	}
 }

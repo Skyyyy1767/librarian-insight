@@ -7,15 +7,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.level.block.Blocks;
@@ -27,7 +26,7 @@ import net.minecraft.world.phys.Vec3;
 public final class LecternManager {
     public record DisplayText(String text, boolean maxed, int emeraldCost, int bookCost) {}
 
-    private final Map<BlockPos, @Nullable DisplayText> displays = new HashMap<>();
+    private final Map<BlockPos, DisplayText> displays = new HashMap<>();
     private final Set<BlockPos> pendingPlacements = new HashSet<>();
     private final Set<BlockPos> knownLecterns = new HashSet<>();
     private final Map<BlockPos, LecternAssociation> associations = new HashMap<>();
@@ -36,7 +35,7 @@ public final class LecternManager {
     private final Map<UUID, ClaimSignal> recentClaimSignals = new HashMap<>();
     private final Map<BlockPos, Long> recentPlacements = new HashMap<>();
     private final Set<BlockPos> ambiguousLecterns = new HashSet<>();
-    private @Nullable ClientLevel trackedLevel;
+    private ClientLevel trackedLevel;
     private int clock;
 
     private record ClaimSignal(long gameTime, Vec3 villagerPosition, boolean wasLibrarian) {}
@@ -64,7 +63,7 @@ public final class LecternManager {
             }
         }
     }
-    public @Nullable DisplayText getTextOfLectern(BlockPos pos) {
+    public DisplayText getTextOfLectern(BlockPos pos) {
         if (pendingPlacements.contains(pos)) {
             return null;
         }
@@ -115,9 +114,9 @@ public final class LecternManager {
         recentClaimSignals.put(villager.getUUID(), new ClaimSignal(
                 minecraft.level.getGameTime(),
                 villager.position(),
-                villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
+                villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN
         ));
-        if (villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+        if (villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN) {
             List<BlockPos> candidates = associationCandidates(villager.position(), 2.0);
             long now = minecraft.level.getGameTime();
             List<BlockPos> recentCandidates = candidates.stream()
@@ -148,7 +147,7 @@ public final class LecternManager {
         for (Entity entity : minecraft.level.entitiesForRendering()) {
             if (entity instanceof Villager villager
                     && villager.isAlive()
-                    && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
+                    && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN
                     && villager.position().distanceToSqr(soundPosition) <= 0.36) {
                 soundingVillagers.add(villager);
             }
@@ -166,7 +165,7 @@ public final class LecternManager {
     }
 
     /** Returns the retained UUID first, using the legacy nearest rule only if absent. */
-    public @Nullable LecternAssociation getAssociationForMenu(BlockPos pos) {
+    public LecternAssociation getAssociationForMenu(BlockPos pos) {
         BlockPos immutablePos = pos.immutable();
         LecternAssociation retained = associations.get(immutablePos);
         if (retained != null) {
@@ -177,7 +176,7 @@ public final class LecternManager {
         int candidates = 0;
         for (Villager villager : LibrarianInsight.enchantmentManager.getTrackedVillagers()) {
             if (!villager.isAlive()
-                    || !villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                    || villager.getVillagerData().getProfession() != VillagerProfession.LIBRARIAN) {
                 continue;
             }
             float distance = (float)Math.sqrt(pos.distSqr(villager.blockPosition()));
@@ -203,7 +202,7 @@ public final class LecternManager {
     }
 
     /** Returns learned evidence without creating a nearest-villager fallback. */
-    public @Nullable LecternAssociation getRetainedAssociation(BlockPos pos) {
+    public LecternAssociation getRetainedAssociation(BlockPos pos) {
         return associations.get(pos);
     }
 
@@ -250,7 +249,7 @@ public final class LecternManager {
                 LibrarianInsight.enchantmentManager.invalidateVillager(uuid);
                 continue;
             }
-            boolean isLibrarian = villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN);
+            boolean isLibrarian = villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN;
             Boolean wasLibrarian = librarianProfession.put(uuid, isLibrarian);
             if (!isLibrarian && Boolean.TRUE.equals(wasLibrarian)) {
                 invalidateVillager(uuid);
@@ -355,12 +354,12 @@ public final class LecternManager {
         displays.put(pos, format(LibrarianInsight.enchantmentManager.getEnchant(association.villagerUuid())));
     }
 
-    private static DisplayText format(@Nullable EnchantmentInfo enchantment) {
+    private static DisplayText format(EnchantmentInfo enchantment) {
         if (enchantment == null) {
             return new DisplayText(Items.BOOKSHELF.getName(Items.BOOKSHELF.getDefaultInstance()).getString(), false, 0, 0);
         }
         String name = enchantment.enchantment().unwrapKey()
-                .map(key -> Component.translatable(Util.makeDescriptionId("enchantment", key.identifier())).getString())
+                .map(key -> Component.translatable(Util.makeDescriptionId("enchantment", key.location())).getString())
                 .orElseGet(() -> Enchantment.getFullname(enchantment.enchantment(), enchantment.level()).getString());
         if (enchantment.enchantment().value().getMaxLevel() != 1) {
             name += " " + Component.translatable("enchantment.level." + enchantment.level()).getString();

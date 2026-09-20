@@ -3,7 +3,7 @@ package librarianinsight.trade;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.flag.FeatureFlags;
 
-/** Selects the stock 26.3 librarian trade table. */
+/** Selects the stock 1.21.1 librarian trade table. */
 public enum LibrarianTradeMode {
     STANDARD,
     TRADE_REBALANCE;

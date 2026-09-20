@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
@@ -21,7 +21,7 @@ public record LibrarianTradeReference(
         Optional<NaturalCost> naturalCost,
         ItemAmount result,
         boolean enchantedBookSelector,
-        Set<ResourceKey<VillagerType>> villagerTypes,
+        Set<VillagerType> villagerTypes,
         OfferSignature signature) {
 
     public LibrarianTradeReference {
@@ -44,7 +44,7 @@ public record LibrarianTradeReference(
         return iconItem.getDefaultInstance();
     }
 
-    public boolean isAvailableFor(Optional<ResourceKey<VillagerType>> villagerType) {
+    public boolean isAvailableFor(Optional<VillagerType> villagerType) {
         return villagerTypes.isEmpty() || villagerType.isEmpty() || villagerTypes.contains(villagerType.get());
     }
 

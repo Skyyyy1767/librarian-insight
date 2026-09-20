@@ -26,15 +26,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.behavior.WorkAtPoi;
 import net.minecraft.world.entity.ai.gossip.GossipType;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
-import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.entity.schedule.Activity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.timeline.Timelines;
-import org.jspecify.annotations.Nullable;
 
 /** Asynchronously copies authoritative integrated-server data for the client UI. */
 public final class IntegratedVillagerStatusService {
@@ -42,7 +40,7 @@ public final class IntegratedVillagerStatusService {
 
     public long request(
             BlockPos lecternPos,
-            @Nullable UUID fallbackVillager,
+            UUID fallbackVillager,
             Consumer<Result> callback
     ) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -76,7 +74,7 @@ public final class IntegratedVillagerStatusService {
             ResourceKey<Level> dimension,
             BlockPos lecternPos,
             UUID playerUuid,
-            @Nullable UUID fallbackVillager
+            UUID fallbackVillager
     ) {
         ServerLevel level = server.getLevel(dimension);
         if (level == null) {
@@ -87,7 +85,7 @@ public final class IntegratedVillagerStatusService {
         for (Entity entity : level.getAllEntities()) {
             if (entity instanceof Villager villager
                     && villager.isAlive()
-                    && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
+                    && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN
                     && jobSiteMatches(villager, dimension, lecternPos)) {
                 exactOwners.add(villager);
             }
@@ -117,14 +115,14 @@ public final class IntegratedVillagerStatusService {
                 && jobSite.get().pos().equals(lecternPos);
     }
 
-    private static @Nullable Villager findFallback(ServerLevel level, @Nullable UUID villagerUuid) {
+    private static Villager findFallback(ServerLevel level, UUID villagerUuid) {
         if (villagerUuid == null) {
             return null;
         }
         Entity entity = level.getEntity(villagerUuid);
         return entity instanceof Villager villager
                 && villager.isAlive()
-                && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
+                && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN
                 ? villager
                 : null;
     }
@@ -132,7 +130,7 @@ public final class IntegratedVillagerStatusService {
     private static VillagerStatusSnapshot snapshot(
             ServerLevel level,
             Villager villager,
-            @Nullable ServerPlayer player,
+            ServerPlayer player,
             BlockPos lecternPos,
             boolean exactOwner
     ) {
@@ -189,10 +187,8 @@ public final class IntegratedVillagerStatusService {
         VillagerAccessor restockAccess = (VillagerAccessor)villager;
         long lastRestock = restockAccess.librarianInsight$getLastRestockGameTime();
         int rawRestocks = restockAccess.librarianInsight$getNumberOfRestocksToday();
-        long lastCheckDay = restockAccess.librarianInsight$getLastRestockCheckDay();
-        long currentDay = level.registryAccess().get(Timelines.OVERWORLD_DAY)
-                .map(timeline -> timeline.value().getPeriodCount(level.clockManager()))
-                .orElse(0);
+        long currentDay = level.getDayTime() / 24000L;
+        long lastCheckDay = restockAccess.librarianInsight$getLastRestockCheckDay() / 24000L;
         boolean resetPending = gameTime > lastRestock + 12000L
                 || lastCheckDay > 0L && currentDay > lastCheckDay;
         int needsRestock = (int)trades.stream().filter(trade -> trade.uses() > 0).count();
@@ -231,7 +227,7 @@ public final class IntegratedVillagerStatusService {
                 withinRange,
                 activity,
                 workingAtLectern,
-                villager.getVillagerData().level(),
+                villager.getVillagerData().getLevel(),
                 villager.getVillagerXp(),
                 restock,
                 gossip,
@@ -243,7 +239,7 @@ public final class IntegratedVillagerStatusService {
 
     private static VillagerStatusSnapshot.Gossip gossip(
             Villager villager,
-            @Nullable ServerPlayer player,
+            ServerPlayer player,
             int reputation
     ) {
         EnumMap<VillagerStatusSnapshot.GossipKind, Integer> values =
@@ -261,7 +257,7 @@ public final class IntegratedVillagerStatusService {
         return new VillagerStatusSnapshot.Gossip(reputation, values);
     }
 
-    private static VillagerStatusSnapshot.Hero hero(@Nullable ServerPlayer player) {
+    private static VillagerStatusSnapshot.Hero hero(ServerPlayer player) {
         if (player == null) {
             return VillagerStatusSnapshot.Hero.inactive();
         }
@@ -310,7 +306,7 @@ public final class IntegratedVillagerStatusService {
     public record Result(
             long requestId,
             Availability availability,
-            @Nullable VillagerStatusSnapshot snapshot
+            VillagerStatusSnapshot snapshot
     ) {
     }
 }

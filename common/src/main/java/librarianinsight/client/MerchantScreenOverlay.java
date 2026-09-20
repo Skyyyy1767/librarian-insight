@@ -10,7 +10,7 @@ import librarianinsight.trade.LibrarianTradeMode;
 import librarianinsight.trade.LibrarianTradeReference;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.MerchantScreen;
 import net.minecraft.resources.ResourceKey;
@@ -18,15 +18,14 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.npc.villager.Villager;
-import net.minecraft.world.entity.npc.villager.VillagerProfession;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.EntityHitResult;
-import org.jspecify.annotations.Nullable;
 
 /** Adds a read-only current/minimum cost card to directly opened librarian screens. */
 public final class MerchantScreenOverlay {
@@ -47,14 +46,15 @@ public final class MerchantScreenOverlay {
     }
 
     public static InteractionResult useEntity(Player player, Level level, InteractionHand hand,
-            Entity entity, @Nullable EntityHitResult hitResult) {
+            Entity entity, EntityHitResult hitResult) {
         if (!level.isClientSide() || hand != InteractionHand.MAIN_HAND) {
             return InteractionResult.PASS;
         }
         if (entity instanceof Villager villager && villager.isAlive() && !villager.isBaby()
-                && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)) {
+                && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN) {
             pendingContext = new PendingContext(villager.getUUID(),
-                    villager.getVillagerData().type().unwrapKey(), level.getGameTime());
+                    Optional.of(villager.getVillagerData().getType()),
+                    level.getGameTime());
         } else {
             clearPendingContext();
         }
@@ -73,7 +73,7 @@ public final class MerchantScreenOverlay {
     }
 
     public static void afterForeground(Screen screen,
-            GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+            GuiGraphics graphics, int mouseX, int mouseY) {
         if (screen instanceof MerchantScreen merchantScreen) {
             OverlayState state = ACTIVE_SCREENS.get(merchantScreen);
             if (state != null) {
@@ -96,7 +96,7 @@ public final class MerchantScreenOverlay {
             if (entity instanceof Villager villager && villager.getUUID().equals(context.librarianUuid())) {
                 return villager.isAlive()
                         && !villager.isBaby()
-                        && villager.getVillagerData().profession().is(VillagerProfession.LIBRARIAN)
+                        && villager.getVillagerData().getProfession() == VillagerProfession.LIBRARIAN
                         ? Optional.of(context)
                         : Optional.empty();
             }
@@ -111,7 +111,7 @@ public final class MerchantScreenOverlay {
     private static void extractOverlay(
             MerchantScreen screen,
             OverlayState overlayState,
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             int mouseX,
             int mouseY
     ) {
@@ -128,12 +128,12 @@ public final class MerchantScreenOverlay {
         }
         PanelPosition panel = panelPosition.get();
         graphics.fill(panel.x(), panel.y(), panel.x() + PANEL_WIDTH, panel.y() + PANEL_HEIGHT, PANEL_BACKGROUND);
-        graphics.outline(panel.x(), panel.y(), PANEL_WIDTH, PANEL_HEIGHT, PANEL_BORDER);
+        graphics.renderOutline(panel.x(), panel.y(), PANEL_WIDTH, PANEL_HEIGHT, PANEL_BORDER);
 
         Font font = Minecraft.getInstance().font;
         int currentY = panel.y() + 1;
         int minimumY = panel.y() + 18;
-        graphics.text(font, "Current:", panel.x() + 5, currentY + 4, TEXT_COLOR, false);
+        graphics.drawString(font, "Current:", panel.x() + 5, currentY + 4, TEXT_COLOR, false);
         LibrarianMinimumPrice.CurrentCost current = LibrarianMinimumPrice.currentCost(offer);
         extractCosts(
                 graphics,
@@ -146,18 +146,18 @@ public final class MerchantScreenOverlay {
                 mouseY
         );
 
-        graphics.text(font, "Minimum vanilla:", panel.x() + 5, minimumY + 4, TEXT_COLOR, false);
+        graphics.drawString(font, "Minimum vanilla:", panel.x() + 5, minimumY + 4, TEXT_COLOR, false);
         Optional<MinimumCosts> minimum = overlayState.minimumFor(offer);
         if (minimum.isPresent()) {
             MinimumCosts costs = minimum.get();
             extractCosts(graphics, font, costs.first(), costs.second(), panel.x() + 94, minimumY, mouseX, mouseY);
         } else {
-            graphics.text(font, "unavailable", panel.x() + 94, minimumY + 4, MUTED_TEXT_COLOR, false);
+            graphics.drawString(font, "unavailable", panel.x() + 94, minimumY + 4, MUTED_TEXT_COLOR, false);
         }
     }
 
     private static void extractCosts(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Font font,
             ItemStack first,
             ItemStack second,
@@ -173,7 +173,7 @@ public final class MerchantScreenOverlay {
     }
 
     private static void extractCost(
-            GuiGraphicsExtractor graphics,
+            GuiGraphics graphics,
             Font font,
             ItemStack stack,
             int x,
@@ -184,21 +184,21 @@ public final class MerchantScreenOverlay {
         if (stack.isEmpty()) {
             return;
         }
-        graphics.fakeItem(stack, x, y);
-        graphics.itemDecorations(font, stack, x, y, stack.getCount() == 1 ? "1" : null);
+        graphics.renderFakeItem(stack, x, y);
+        graphics.renderItemDecorations(font, stack, x, y, stack.getCount() == 1 ? "1" : null);
         if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
-            graphics.setTooltipForNextFrame(font, stack, mouseX, mouseY);
+            graphics.renderTooltip(font, stack, mouseX, mouseY);
         }
     }
 
     /**
      * The only integration point for the conservative vanilla-trade matcher.
-     * Until a stock 26.3 offer is recognized, custom/unknown trades deliberately
+     * Until a stock 1.21.1 offer is recognized, custom/unknown trades deliberately
      * report no minimum instead of inferring one from their current cost.
      */
     private static Optional<MinimumCosts> minimumFor(
             MerchantOffer offer,
-            Optional<ResourceKey<VillagerType>> villagerType
+            Optional<VillagerType> villagerType
     ) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
@@ -244,7 +244,7 @@ public final class MerchantScreenOverlay {
 
     private record PendingContext(
             UUID librarianUuid,
-            Optional<ResourceKey<VillagerType>> villagerType,
+            Optional<VillagerType> villagerType,
             long interactionTime
     ) {
         private PendingContext {
@@ -254,11 +254,11 @@ public final class MerchantScreenOverlay {
 
     /** Avoids rebuilding the full enchanted-book reference list every frame. */
     private static final class OverlayState {
-        private final Optional<ResourceKey<VillagerType>> villagerType;
+        private final Optional<VillagerType> villagerType;
         private MerchantOffer cachedOffer;
         private Optional<MinimumCosts> cachedMinimum = Optional.empty();
 
-        private OverlayState(Optional<ResourceKey<VillagerType>> villagerType) {
+        private OverlayState(Optional<VillagerType> villagerType) {
             this.villagerType = villagerType;
         }
 

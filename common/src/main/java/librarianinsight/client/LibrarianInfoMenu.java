@@ -35,7 +35,7 @@ public final class LibrarianInfoMenu {
         Minecraft minecraft = Minecraft.getInstance();
         if (LibrarianInsight.lecternManager != null
                 && LibrarianInsight.enchantmentManager != null) {
-            minecraft.gui.setScreen(new LibrarianInfoScreen(pos));
+            minecraft.setScreen(new LibrarianInfoScreen(pos));
             // FAIL stops the client from sending a use packet; this screen is
             // informational and must not invoke or alter the lectern server-side.
             return InteractionResult.FAIL;

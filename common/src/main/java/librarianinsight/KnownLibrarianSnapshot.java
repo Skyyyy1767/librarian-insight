@@ -3,7 +3,7 @@ package librarianinsight;
 import java.util.UUID;
 import java.util.Optional;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.item.trading.ItemCost;
@@ -15,7 +15,7 @@ import net.minecraft.world.item.trading.ItemCost;
 public final class KnownLibrarianSnapshot {
     private final UUID villagerUuid;
     private final MerchantOffers offers;
-    private final Optional<ResourceKey<VillagerType>> villagerType;
+    private final Optional<VillagerType> villagerType;
     private final int villagerLevel;
     private final int villagerXp;
     private final boolean showProgress;
@@ -25,7 +25,7 @@ public final class KnownLibrarianSnapshot {
     public KnownLibrarianSnapshot(
             UUID villagerUuid,
             MerchantOffers offers,
-            Optional<ResourceKey<VillagerType>> villagerType,
+            Optional<VillagerType> villagerType,
             int villagerLevel,
             int villagerXp,
             boolean showProgress,
@@ -51,7 +51,7 @@ public final class KnownLibrarianSnapshot {
         return deepCopyOffers(offers);
     }
 
-    public Optional<ResourceKey<VillagerType>> villagerType() {
+    public Optional<VillagerType> villagerType() {
         return villagerType;
     }
 

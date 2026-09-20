@@ -9,9 +9,10 @@ import java.util.Set;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.EnchantmentTags;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -23,9 +24,9 @@ import static librarianinsight.trade.LibrarianTradeReference.ItemAmount;
 import static librarianinsight.trade.LibrarianTradeReference.NaturalCost;
 import static librarianinsight.trade.LibrarianTradeReference.OfferSignature;
 
-/** Stock Minecraft 26.3 librarian possibilities and natural price ranges. */
+/** Stock Minecraft 1.21.1 librarian possibilities and natural price ranges. */
 public final class LibrarianTradeCatalog {
-    private static final Set<ResourceKey<VillagerType>> ALL_VILLAGER_TYPES = Set.of(
+    private static final Set<VillagerType> ALL_VILLAGER_TYPES = Set.of(
             VillagerType.DESERT,
             VillagerType.JUNGLE,
             VillagerType.PLAINS,
@@ -72,14 +73,13 @@ public final class LibrarianTradeCatalog {
             Enchantments.PIERCING,
             Enchantments.DENSITY,
             Enchantments.BREACH,
-            Enchantments.LUNGE,
             Enchantments.BINDING_CURSE,
             Enchantments.VANISHING_CURSE,
             Enchantments.FROST_WALKER,
             Enchantments.MENDING
     );
 
-    private static final Map<ResourceKey<VillagerType>, List<ResourceKey<Enchantment>>> REBALANCE_COMMON_ENCHANTMENTS = Map.of(
+    private static final Map<VillagerType, List<ResourceKey<Enchantment>>> REBALANCE_COMMON_ENCHANTMENTS = Map.of(
             VillagerType.DESERT, List.of(Enchantments.FIRE_PROTECTION, Enchantments.THORNS, Enchantments.INFINITY),
             VillagerType.JUNGLE, List.of(Enchantments.FEATHER_FALLING, Enchantments.PROJECTILE_PROTECTION, Enchantments.POWER),
             VillagerType.PLAINS, List.of(Enchantments.PUNCH, Enchantments.SMITE, Enchantments.BANE_OF_ARTHROPODS),
@@ -89,7 +89,7 @@ public final class LibrarianTradeCatalog {
             VillagerType.TAIGA, List.of(Enchantments.BLAST_PROTECTION, Enchantments.FIRE_ASPECT, Enchantments.FLAME)
     );
 
-    private static final Map<ResourceKey<VillagerType>, MasterBook> REBALANCE_MASTER_BOOKS = Map.of(
+    private static final Map<VillagerType, MasterBook> REBALANCE_MASTER_BOOKS = Map.of(
             VillagerType.DESERT, new MasterBook(Enchantments.EFFICIENCY, 3, true),
             VillagerType.JUNGLE, new MasterBook(Enchantments.UNBREAKING, 2, true),
             VillagerType.PLAINS, new MasterBook(Enchantments.PROTECTION, 3, true),
@@ -108,7 +108,7 @@ public final class LibrarianTradeCatalog {
     /** Returns icon rows in profession-level order, filtered for a known villager variant when supplied. */
     public static List<LibrarianTradeReference> possibleTrades(
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType) {
+            Optional<VillagerType> villagerType) {
         List<LibrarianTradeReference> source = mode == LibrarianTradeMode.TRADE_REBALANCE
                 ? REBALANCE_TRADES
                 : STANDARD_TRADES;
@@ -117,7 +117,7 @@ public final class LibrarianTradeCatalog {
 
     public static List<LibrarianTradeReference> possibleTradesAtLevel(
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType,
+            Optional<VillagerType> villagerType,
             int professionLevel) {
         return possibleTrades(mode, villagerType).stream()
                 .filter(trade -> trade.professionLevel() == professionLevel)
@@ -131,7 +131,7 @@ public final class LibrarianTradeCatalog {
     public static List<LibrarianEnchantedBookReference> enchantedBooks(
             HolderLookup.Provider registries,
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType) {
+            Optional<VillagerType> villagerType) {
         HolderLookup.RegistryLookup<Enchantment> enchantments = registries.lookupOrThrow(Registries.ENCHANTMENT);
         List<LibrarianEnchantedBookReference> result = new ArrayList<>();
 
@@ -146,12 +146,12 @@ public final class LibrarianTradeCatalog {
                 );
             }
         } else {
-            List<ResourceKey<VillagerType>> types = villagerType
+            List<VillagerType> types = villagerType
                     .map(List::of)
                     .orElseGet(() -> ALL_VILLAGER_TYPES.stream()
-                            .sorted(Comparator.comparing(type -> type.identifier().toString()))
+                            .sorted(Comparator.comparing(type -> BuiltInRegistries.VILLAGER_TYPE.getKey(type).toString()))
                             .toList());
-            for (ResourceKey<VillagerType> type : types) {
+            for (VillagerType type : types) {
                 List<ResourceKey<Enchantment>> common = REBALANCE_COMMON_ENCHANTMENTS.get(type);
                 MasterBook master = REBALANCE_MASTER_BOOKS.get(type);
                 if (common == null || master == null) {
@@ -186,17 +186,17 @@ public final class LibrarianTradeCatalog {
         return result.stream()
                 .sorted(Comparator
                         .comparing((LibrarianEnchantedBookReference book) -> book.enchantment().unwrapKey()
-                                .map(key -> key.identifier().toString())
+                                .map(key -> key.location().toString())
                                 .orElse(""))
                         .thenComparingInt(LibrarianEnchantedBookReference::enchantmentLevel)
                         .thenComparing(book -> book.villagerTypes().stream()
                                 .findFirst()
-                                .map(type -> type.identifier().toString())
+                                .map(type -> BuiltInRegistries.VILLAGER_TYPE.getKey(type).toString())
                                 .orElse("")))
                 .toList();
     }
 
-    /** Exact 26.3 EnchantRandomlyFunction cost, including treasure doubling and the 64-item clamp. */
+    /** Exact 1.21.1 EnchantRandomlyFunction cost, including treasure doubling and the 64-item clamp. */
     public static CountRange randomEnchantedBookEmeraldRange(Holder<Enchantment> enchantment, int level) {
         requireValidLevel(enchantment, level);
         int multiplier = enchantment.is(EnchantmentTags.DOUBLE_TRADE_PRICE) ? 2 : 1;
@@ -220,11 +220,11 @@ public final class LibrarianTradeCatalog {
         return STANDARD_TRADEABLE_ENCHANTMENTS;
     }
 
-    public static List<ResourceKey<Enchantment>> rebalanceCommonEnchantmentKeys(ResourceKey<VillagerType> villagerType) {
+    public static List<ResourceKey<Enchantment>> rebalanceCommonEnchantmentKeys(VillagerType villagerType) {
         return REBALANCE_COMMON_ENCHANTMENTS.getOrDefault(villagerType, List.of());
     }
 
-    public static Optional<ResourceKey<Enchantment>> rebalanceMasterEnchantmentKey(ResourceKey<VillagerType> villagerType) {
+    public static Optional<ResourceKey<Enchantment>> rebalanceMasterEnchantmentKey(VillagerType villagerType) {
         return Optional.ofNullable(REBALANCE_MASTER_BOOKS.get(villagerType)).map(MasterBook::enchantment);
     }
 
@@ -232,7 +232,7 @@ public final class LibrarianTradeCatalog {
             List<LibrarianEnchantedBookReference> output,
             Holder<Enchantment> enchantment,
             List<Integer> professionLevels,
-            Set<ResourceKey<VillagerType>> villagerTypes,
+            Set<VillagerType> villagerTypes,
             LibrarianEnchantedBookReference.PriceGeneration generation) {
         for (int level = enchantment.value().getMinLevel(); level <= enchantment.value().getMaxLevel(); level++) {
             output.add(new LibrarianEnchantedBookReference(
@@ -282,8 +282,8 @@ public final class LibrarianTradeCatalog {
             trades.add(bookSelector(4, false));
         }
 
-        trades.add(sell("yellow_candle", 5, Items.EMERALD, 3, Items.DYED_CANDLE.yellow(), 1, 12, 30));
-        trades.add(sell("red_candle", 5, Items.EMERALD, 3, Items.DYED_CANDLE.red(), 1, 12, 30));
+        trades.add(sell("yellow_candle", 5, Items.EMERALD, 3, Items.YELLOW_CANDLE, 1, 12, 30));
+        trades.add(sell("red_candle", 5, Items.EMERALD, 3, Items.RED_CANDLE, 1, 12, 30));
         if (tradeRebalance) {
             trades.add(bookSelector(5, true));
         }

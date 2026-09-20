@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.Set;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -16,7 +16,7 @@ public record LibrarianEnchantedBookReference(
         int enchantmentLevel,
         LibrarianTradeReference.NaturalCost naturalCost,
         List<Integer> professionLevels,
-        Set<ResourceKey<VillagerType>> villagerTypes,
+        Set<VillagerType> villagerTypes,
         PriceGeneration priceGeneration) {
 
     public LibrarianEnchantedBookReference {
@@ -40,7 +40,7 @@ public record LibrarianEnchantedBookReference(
         return stack;
     }
 
-    public boolean isAvailableFor(ResourceKey<VillagerType> villagerType) {
+    public boolean isAvailableFor(VillagerType villagerType) {
         return villagerTypes.isEmpty() || villagerTypes.contains(villagerType);
     }
 

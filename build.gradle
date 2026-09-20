@@ -1,13 +1,11 @@
 plugins {
     id 'base'
-    id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
-    id 'net.neoforged.moddev' version "${moddev_version}" apply false
-    id 'net.minecraftforge.gradle' version "${forgegradle_version}" apply false
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
 }
-tasks.named('build') { dependsOn ':fabric:build', ':neoforge:build', ':forge:build' }
-tasks.named('assemble') { dependsOn ':fabric:assemble', ':neoforge:assemble', ':forge:assemble' }
-tasks.named('check') { dependsOn ':fabric:check', ':neoforge:check', ':forge:check' }
+tasks.named('build') { dependsOn ':fabric:build' }
+tasks.named('assemble') { dependsOn ':fabric:assemble' }
+tasks.named('check') { dependsOn ':fabric:check' }
 tasks.register('test') {
     group = 'verification'
-    dependsOn ':fabric:test', ':neoforge:test', ':forge:test'
+    dependsOn ':fabric:test'
 }

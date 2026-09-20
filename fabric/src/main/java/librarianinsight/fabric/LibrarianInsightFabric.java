@@ -30,7 +30,7 @@ public final class LibrarianInsightFabric implements ClientModInitializer {
         UseEntityCallback.EVENT.register(MerchantScreenOverlay::useEntity);
         ScreenEvents.BEFORE_INIT.register((minecraft, screen, width, height) -> {
             MerchantScreenOverlay.beforeScreenInit(minecraft, screen);
-            ScreenEvents.afterForeground(screen).register((s, graphics, x, y, tick) ->
+            ScreenEvents.afterRender(screen).register((s, graphics, x, y, tick) ->
                     MerchantScreenOverlay.afterForeground(s, graphics, x, y));
         });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, access) ->

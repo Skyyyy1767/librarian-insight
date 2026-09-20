@@ -1,6 +1,6 @@
 package librarianinsight.mixin;
 
-import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.Villager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
@@ -13,6 +13,6 @@ public interface VillagerAccessor {
     @Accessor("numberOfRestocksToday")
     int librarianInsight$getNumberOfRestocksToday();
 
-    @Accessor("lastRestockCheckDay")
+    @Accessor("lastRestockCheckDayTime")
     long librarianInsight$getLastRestockCheckDay();
 }

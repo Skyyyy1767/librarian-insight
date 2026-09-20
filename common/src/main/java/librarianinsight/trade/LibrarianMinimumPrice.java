@@ -6,7 +6,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.entity.npc.villager.VillagerType;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -15,7 +15,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
 
-/** Recognizes stock 26.3 offers and returns their theoretical natural minimum/range. */
+/** Recognizes stock 1.21.1 offers and returns their theoretical natural minimum/range. */
 public final class LibrarianMinimumPrice {
     private LibrarianMinimumPrice() {
     }
@@ -28,7 +28,7 @@ public final class LibrarianMinimumPrice {
             MerchantOffer offer,
             HolderLookup.Provider registries,
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType) {
+            Optional<VillagerType> villagerType) {
         Objects.requireNonNull(offer, "offer");
         Objects.requireNonNull(registries, "registries");
         Objects.requireNonNull(mode, "mode");
@@ -50,7 +50,7 @@ public final class LibrarianMinimumPrice {
             MerchantOffer offer,
             HolderLookup.Provider registries,
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType) {
+            Optional<VillagerType> villagerType) {
         return resolve(offer, registries, mode, villagerType).map(Match::naturalCost);
     }
 
@@ -65,7 +65,7 @@ public final class LibrarianMinimumPrice {
             MerchantOffer offer,
             HolderLookup.Provider registries,
             LibrarianTradeMode mode,
-            Optional<ResourceKey<VillagerType>> villagerType) {
+            Optional<VillagerType> villagerType) {
         // The rebalance table is variant-gated. Without the villager's synchronized
         // type, treating an arbitrary book as one of those entries would be a guess.
         if (mode == LibrarianTradeMode.TRADE_REBALANCE && villagerType.isEmpty()) {

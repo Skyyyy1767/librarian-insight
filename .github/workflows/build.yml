@@ -19,7 +19,6 @@ jobs:
         with:
           java-version: |
             21
-            25
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
@@ -31,5 +30,3 @@ jobs:
           name: Artifacts
           path: |
             fabric/build/libs/
-            neoforge/build/libs/
-            forge/build/libs/
