@@ -1,0 +1,123 @@
+apply plugin: 'java-library'
+apply plugin: 'maven-publish'
+
+base.archivesName = "librarian-insight-${project.name}"
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(project.java_version)
+    withSourcesJar()
+}
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+}
+sourceSets {
+    main {
+        java.srcDir rootProject.file('common/src/main/java')
+        resources.srcDir rootProject.file('common/src/main/resources')
+    }
+    test {
+        java.srcDir rootProject.file('common/src/test/java')
+        resources.srcDir rootProject.file('common/src/test/resources')
+    }
+}
+repositories { mavenCentral() }
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.12.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+test { useJUnitPlatform() }
+
+def loaderName = project.name
+def modVersion = project.version.toString()
+def minecraftVersion = project.minecraft_version.toString()
+def fabricLoaderVersion = project.loader_version.toString()
+def fabricApiVersion = project.fabric_api_version.toString()
+def neoForgeVersion = project.neoforge_version.toString()
+def distributionFile = tasks.named('jar').flatMap { it.archiveFile }
+def commonRoot = rootProject.file('common/src')
+def commonJavaRoot = rootProject.file('common/src/main/java')
+def commonResourcesRoot = rootProject.file('common/src/main/resources')
+def commonSources = fileTree(commonJavaRoot).matching { include '**/*.java' }
+def commonResources = fileTree(commonResourcesRoot)
+// Catch packaging regressions as part of every loader build, not just at release time.
+tasks.register('verifyDistribution') {
+    group = 'verification'
+    dependsOn tasks.named('jar')
+    inputs.file(distributionFile)
+    inputs.dir(commonRoot)
+    doLast {
+        def archive = distributionFile.get().asFile
+        assert archive.name == "librarian-insight-${loaderName}-${modVersion}.jar"
+        def forbidden = loaderName == 'fabric' ? 'neoforge' : 'fabric'
+        new java.util.zip.ZipFile(archive).withCloseable { zip ->
+            def entries = zip.entries().toList()
+            def names = entries.collect { it.name }
+            assert !names.any { it.startsWith("librarianinsight/${forbidden}/") }
+            assert !names.any { it.startsWith('net/fabricmc/') || it.startsWith('net/neoforged/') }
+            assert !names.any { it.endsWith('.jar') } : 'No nested runtime dependencies are expected'
+            assert names.contains('LICENSE_librarian-insight')
+            assert names.contains('librarian_insight.mixins.json')
+            commonResources.files.each { resource ->
+                def path = commonResourcesRoot.toPath().relativize(resource.toPath()).toString().replace('\\', '/')
+                assert zip.getInputStream(zip.getEntry(path)).bytes == resource.bytes : "Changed resource: ${path}"
+            }
+            commonSources.files.each { source ->
+                def path = commonJavaRoot.toPath().relativize(source.toPath()).toString().replace('\\', '/').replace('.java', '.class')
+                assert names.contains(path) : "Missing shared class: ${path}"
+                assert !(source.text =~ /net\.(fabricmc|neoforged)\./).find() : "Loader import in common: ${source}"
+            }
+            entries.findAll { it.name.endsWith('.class') }.each { entry ->
+                byte[] bytes = zip.getInputStream(entry).bytes
+                assert ((bytes[6] & 255) << 8 | (bytes[7] & 255)) == 69 : "Not Java 25: ${entry.name}"
+                def constants = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1)
+                def foreignApi = loaderName == 'fabric' ? 'net/neoforged/' : 'net/fabricmc/'
+                assert !constants.contains(foreignApi) : "Foreign loader reference: ${entry.name}"
+            }
+            if (loaderName == 'fabric') {
+                assert !names.contains('META-INF/neoforge.mods.toml')
+                def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry('fabric.mod.json')))
+                assert metadata.id == 'librarian_insight'
+                assert metadata.name == 'Librarian Insight'
+                assert metadata.version == modVersion
+                assert metadata.depends.minecraft == "~${minecraftVersion}"
+                assert metadata.depends.fabricloader == ">=${fabricLoaderVersion}"
+                assert metadata.depends['fabric-api'] == ">=${fabricApiVersion}"
+                assert metadata.depends.java == '>=25'
+            } else {
+                assert !names.contains('fabric.mod.json')
+                def metadata = zip.getInputStream(zip.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
+                assert !metadata.contains('${')
+                assert metadata.contains('modId="librarian_insight"')
+                assert metadata.contains('displayName="Librarian Insight"')
+                assert metadata.contains('iconFile="assets/librarian_insight/icon.png"')
+                assert !metadata.contains('logoFile=')
+                assert metadata.contains("version=\"${modVersion}\"")
+                assert metadata.contains("versionRange=\"[${minecraftVersion}]\"")
+                assert metadata.contains("versionRange=\"[${neoForgeVersion},)\"")
+                assert metadata.contains('javaVersion="[25,)"')
+                assert names.contains('librarian_insight.neoforge.mixins.json')
+            }
+        }
+        logger.lifecycle("Verified distribution: ${archive}")
+    }
+}
+tasks.named('check') { dependsOn tasks.named('verifyDistribution') }
+processResources {
+    def properties = [version: project.version, minecraft_version: project.minecraft_version,
+                      loader_version: project.loader_version, fabric_api_version: project.fabric_api_version,
+                      neoforge_version: project.neoforge_version]
+    inputs.properties properties
+    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml']) { expand properties }
+}
+jar {
+    from(rootProject.file('LICENSE')) { rename { 'LICENSE_librarian-insight' } }
+}
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = base.archivesName.get()
+            from components.java
+        }
+    }
+}

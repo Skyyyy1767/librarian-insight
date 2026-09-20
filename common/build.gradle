@@ -1,0 +1,3 @@
+plugins { id 'base' }
+// Source-only module: each loader compiles the shared sources against its own
+// Minecraft API. No common JAR or runtime bridge is shipped.

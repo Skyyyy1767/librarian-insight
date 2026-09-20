@@ -5,9 +5,11 @@ pluginManagement {
 			url = 'https://maven.fabricmc.net/'
 		}
 		mavenCentral()
+		maven { url = 'https://maven.neoforged.net/releases' }
 		gradlePluginPortal()
 	}
 }
 
 // Should match your modid
 rootProject.name = 'librarian-insight'
+include 'common', 'fabric', 'neoforge'
