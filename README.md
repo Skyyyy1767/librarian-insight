@@ -142,3 +142,5 @@ limitations separately. Commands and config migration are covered by automated t
 Librarian Insight is inspired by Saphjyr's original [Visible Librarian Trades](https://github.com/Saphjyr/visible-librarian-trades) mod.
 
 The original source and assets are Copyright © 2022 Saphjyr and are used under the MIT License. See [LICENSE](LICENSE).
+
+All original code and modifications made for Librarian Insight are Copyright © 2026 Skyyyy and are licensed under the MIT License.
