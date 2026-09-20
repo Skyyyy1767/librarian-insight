@@ -34,6 +34,7 @@ def minecraftVersion = project.minecraft_version.toString()
 def fabricLoaderVersion = project.loader_version.toString()
 def fabricApiVersion = project.fabric_api_version.toString()
 def neoForgeVersion = project.neoforge_version.toString()
+def forgeVersion = project.forge_version.toString()
 def distributionFile = tasks.named('jar').flatMap { it.archiveFile }
 def commonRoot = rootProject.file('common/src')
 def commonJavaRoot = rootProject.file('common/src/main/java')
@@ -49,12 +50,16 @@ tasks.register('verifyDistribution') {
     doLast {
         def archive = distributionFile.get().asFile
         assert archive.name == "librarian-insight-${loaderName}-${modVersion}.jar"
-        def forbidden = loaderName == 'fabric' ? 'neoforge' : 'fabric'
+        def loaderPackages = ['fabric', 'neoforge', 'forge']
+        def forbiddenLoaders = loaderPackages - loaderName
+        def loaderApis = [fabric: 'net/fabricmc/', neoforge: 'net/neoforged/', forge: 'net/minecraftforge/']
         new java.util.zip.ZipFile(archive).withCloseable { zip ->
             def entries = zip.entries().toList()
             def names = entries.collect { it.name }
-            assert !names.any { it.startsWith("librarianinsight/${forbidden}/") }
-            assert !names.any { it.startsWith('net/fabricmc/') || it.startsWith('net/neoforged/') }
+            forbiddenLoaders.each { forbidden ->
+                assert !names.any { it.startsWith("librarianinsight/${forbidden}/") }
+            }
+            assert !names.any { it.startsWith('net/fabricmc/') || it.startsWith('net/neoforged/') || it.startsWith('net/minecraftforge/') }
             assert !names.any { it.endsWith('.jar') } : 'No nested runtime dependencies are expected'
             assert names.contains('LICENSE_librarian-insight')
             assert names.contains('librarian_insight.mixins.json')
@@ -65,17 +70,21 @@ tasks.register('verifyDistribution') {
             commonSources.files.each { source ->
                 def path = commonJavaRoot.toPath().relativize(source.toPath()).toString().replace('\\', '/').replace('.java', '.class')
                 assert names.contains(path) : "Missing shared class: ${path}"
-                assert !(source.text =~ /net\.(fabricmc|neoforged)\./).find() : "Loader import in common: ${source}"
+                assert !(source.text =~ /net\.(fabricmc|neoforged|minecraftforge)\./).find() : "Loader import in common: ${source}"
             }
             entries.findAll { it.name.endsWith('.class') }.each { entry ->
                 byte[] bytes = zip.getInputStream(entry).bytes
                 assert ((bytes[6] & 255) << 8 | (bytes[7] & 255)) == 69 : "Not Java 25: ${entry.name}"
                 def constants = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1)
-                def foreignApi = loaderName == 'fabric' ? 'net/neoforged/' : 'net/fabricmc/'
-                assert !constants.contains(foreignApi) : "Foreign loader reference: ${entry.name}"
+                forbiddenLoaders.each { forbidden ->
+                    assert !constants.contains(loaderApis[forbidden]) : "Foreign loader reference: ${entry.name}"
+                }
             }
             if (loaderName == 'fabric') {
                 assert !names.contains('META-INF/neoforge.mods.toml')
+                assert !names.contains('META-INF/mods.toml')
+                assert !names.contains('librarian_insight.neoforge.mixins.json')
+                assert !names.contains('librarian_insight.forge.mixins.json')
                 def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry('fabric.mod.json')))
                 assert metadata.id == 'librarian_insight'
                 assert metadata.name == 'Librarian Insight'
@@ -84,8 +93,10 @@ tasks.register('verifyDistribution') {
                 assert metadata.depends.fabricloader == ">=${fabricLoaderVersion}"
                 assert metadata.depends['fabric-api'] == ">=${fabricApiVersion}"
                 assert metadata.depends.java == '>=25'
-            } else {
+            } else if (loaderName == 'neoforge') {
                 assert !names.contains('fabric.mod.json')
+                assert !names.contains('META-INF/mods.toml')
+                assert !names.contains('librarian_insight.forge.mixins.json')
                 def metadata = zip.getInputStream(zip.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
                 assert !metadata.contains('${')
                 assert metadata.contains('modId="librarian_insight"')
@@ -97,6 +108,25 @@ tasks.register('verifyDistribution') {
                 assert metadata.contains("versionRange=\"[${neoForgeVersion},)\"")
                 assert metadata.contains('javaVersion="[25,)"')
                 assert names.contains('librarian_insight.neoforge.mixins.json')
+            } else {
+                assert !names.contains('fabric.mod.json')
+                assert !names.contains('META-INF/neoforge.mods.toml')
+                def metadata = zip.getInputStream(zip.getEntry('META-INF/mods.toml')).getText('UTF-8')
+                assert !metadata.contains('${')
+                assert metadata.contains('modId="librarian_insight"')
+                assert metadata.contains('displayName="Librarian Insight"')
+                assert metadata.contains('logoFile="assets/librarian_insight/icon.png"')
+                assert metadata.contains('clientSideOnly=true')
+                assert metadata.contains("version=\"${modVersion}\"")
+                assert metadata.contains("versionRange=\"[${minecraftVersion},26.4)\"")
+                assert metadata.contains("versionRange=\"[${forgeVersion},)\"")
+                assert metadata.contains('java_version="[25,)"')
+                assert names.contains('librarian_insight.forge.mixins.json')
+                assert !names.contains('librarian_insight.neoforge.mixins.json')
+                assert names.contains('pack.mcmeta')
+                def manifest = new java.util.jar.Manifest(zip.getInputStream(zip.getEntry('META-INF/MANIFEST.MF')))
+                assert manifest.mainAttributes.getValue('MixinConfigs') ==
+                        'librarian_insight.mixins.json,librarian_insight.forge.mixins.json'
             }
         }
         logger.lifecycle("Verified distribution: ${archive}")
@@ -106,9 +136,9 @@ tasks.named('check') { dependsOn tasks.named('verifyDistribution') }
 processResources {
     def properties = [version: project.version, minecraft_version: project.minecraft_version,
                       loader_version: project.loader_version, fabric_api_version: project.fabric_api_version,
-                      neoforge_version: project.neoforge_version]
+                      neoforge_version: project.neoforge_version, forge_version: project.forge_version]
     inputs.properties properties
-    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml']) { expand properties }
+    filesMatching(['fabric.mod.json', 'META-INF/neoforge.mods.toml', 'META-INF/mods.toml']) { expand properties }
 }
 jar {
     from(rootProject.file('LICENSE')) { rename { 'LICENSE_librarian-insight' } }

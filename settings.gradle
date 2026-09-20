@@ -6,10 +6,15 @@ pluginManagement {
 		}
 		mavenCentral()
 		maven { url = 'https://maven.neoforged.net/releases' }
+		maven { url = 'https://maven.minecraftforge.net' }
 		gradlePluginPortal()
 	}
 }
 
+plugins {
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 // Should match your modid
 rootProject.name = 'librarian-insight'
-include 'common', 'fabric', 'neoforge'
+include 'common', 'fabric', 'neoforge', 'forge'

@@ -1,0 +1,37 @@
+plugins {
+    id 'net.minecraftforge.gradle'
+    id 'idea'
+}
+
+apply from: rootProject.file('gradle/loader.gradle')
+
+minecraft {
+    runs {
+        configureEach {
+            workingDir = layout.projectDirectory.dir('run')
+            args '--mixin.config=librarian_insight.mixins.json',
+                    '--mixin.config=librarian_insight.forge.mixins.json'
+        }
+        register('client') {
+            systemProperty 'forge.enabledGameTestNamespaces', 'librarian_insight'
+        }
+    }
+}
+
+repositories {
+    minecraft.mavenizer(it)
+    maven fg.forgeMaven
+    maven fg.minecraftLibsMaven
+    mavenCentral()
+}
+
+dependencies {
+    implementation minecraft.dependency("net.minecraftforge:forge:${minecraft_version}-${forge_version}")
+    annotationProcessor 'net.minecraftforge:eventbus-validator:7.0.5'
+}
+
+tasks.named('jar', Jar) {
+    manifest {
+        attributes['MixinConfigs'] = 'librarian_insight.mixins.json,librarian_insight.forge.mixins.json'
+    }
+}
