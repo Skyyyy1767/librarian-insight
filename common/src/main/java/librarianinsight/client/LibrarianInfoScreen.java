@@ -591,7 +591,7 @@ public final class LibrarianInfoScreen extends Screen {
                 refreshing ? "Last known current (refreshing…)" : "Current",
                 textWidth, 3, MIN_TEXT_SCALE
         );
-        TextLayout minimumLabel = planText("Minimum vanilla", textWidth, 2, MIN_TEXT_SCALE);
+        TextLayout minimumLabel = planText("Minimum", textWidth, 2, MIN_TEXT_SCALE);
         LibrarianMinimumPrice.CurrentCost current = LibrarianMinimumPrice.currentCost(offer);
         LibrarianTradeMode mode = currentMode();
         Optional<LibrarianTradeReference.NaturalCost> minimum = minecraft.level == null
@@ -945,7 +945,7 @@ public final class LibrarianInfoScreen extends Screen {
         int textWidth = Math.max(12, viewport.width() - 2);
         TextLayout titleLayout = planText(bookName(book), textWidth, 4, MIN_TEXT_SCALE);
         TextLayout possible = planText("Possible through Librarian: Yes", textWidth, 4, MIN_TEXT_SCALE);
-        TextLayout minimum = planText("Minimum vanilla", textWidth, 2, MIN_TEXT_SCALE);
+        TextLayout minimum = planText("Minimum", textWidth, 2, MIN_TEXT_SCALE);
         TextLayout naturalRange = planText(
                 "Natural range: " + rangeText(book.emeraldRange()), textWidth, 3, MIN_TEXT_SCALE
         );
@@ -1019,8 +1019,8 @@ public final class LibrarianInfoScreen extends Screen {
         if (snapshot != cachedSnapshot) {
             cachedSnapshot = snapshot;
             cachedOffers = snapshot == null ? new MerchantOffers() : snapshot.offersCopy();
-            selectedCurrent = 0;
-            currentScroll = 0;
+            selectedCurrent = LibrarianMinimumPrice.enchantedBookOfferIndex(cachedOffers);
+            currentScroll = selectedCurrent;
             currentDetailScroll = 0;
         }
     }

@@ -11,6 +11,7 @@ neoForge {
         client {
             client()
             gameDirectory = file('run')
+            ideName = 'Minecraft Client - NeoForge 26.3'
         }
     }
 }

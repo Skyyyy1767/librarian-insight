@@ -146,7 +146,7 @@ public final class MerchantScreenOverlay {
                 mouseY
         );
 
-        graphics.text(font, "Minimum vanilla:", panel.x() + 5, minimumY + 4, TEXT_COLOR, false);
+        graphics.text(font, "Minimum:", panel.x() + 5, minimumY + 4, TEXT_COLOR, false);
         Optional<MinimumCosts> minimum = overlayState.minimumFor(offer);
         if (minimum.isPresent()) {
             MinimumCosts costs = minimum.get();

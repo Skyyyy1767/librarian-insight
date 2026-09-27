@@ -5,4 +5,13 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 }
-loom { runs { client { runDir 'run' } } }
+loom {
+    runs {
+        client {
+            runDir 'run'
+            generateRunConfig = true
+            displayName = 'Minecraft Client - Fabric 26.3'
+            getAppendProjectPathToDisplayName().set(false)
+        }
+    }
+}
