@@ -12,6 +12,7 @@
         "BlockEntityRenderDispatcherMixin",
         "ClientPacketListenerMixin",
         "BlockMixin",
+        "LecternBlockMixin",
         "RenderLayerInvoker",
         "VillagerProfessionLayerMixin",
         "MerchantScreenAccessor"

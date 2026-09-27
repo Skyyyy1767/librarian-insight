@@ -1,6 +1,8 @@
 package librarianinsight.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -8,6 +10,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -35,6 +38,8 @@ public class BlockEntityRenderDispatcherMixin {
     private static final float ICON_AMOUNT_GAP = 4.0F;
     private static final float PRICE_GROUP_GAP = 11.0F;
     private static final float EMERALD_AMOUNT_Y_OFFSET = 2.0F;
+    private static final ByteBufferBuilder ITEM_BUFFER = new ByteBufferBuilder(1536);
+    private static final MultiBufferSource.BufferSource ITEM_BUFFERS = MultiBufferSource.immediate(ITEM_BUFFER);
 
     @Inject(method = "render", at = @At("TAIL"))
     private <E extends BlockEntity> void renderLecternText(
@@ -122,7 +127,7 @@ public class BlockEntityRenderDispatcherMixin {
         float rowWidth = emeraldPart + (bookCost > 0 ? PRICE_GROUP_GAP + bookPart : 0.0F);
         float cursor = -rowWidth / 2.0F;
 
-        renderItemIcon(poseStack, buffers, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+        renderItemIcon(poseStack, new ItemStack(Items.EMERALD), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
         cursor += PRICE_ICON_SIZE;
         if (!emeraldText.isEmpty()) {
             cursor += ICON_AMOUNT_GAP;
@@ -132,7 +137,7 @@ public class BlockEntityRenderDispatcherMixin {
 
         if (bookCost > 0) {
             cursor += PRICE_GROUP_GAP;
-            renderItemIcon(poseStack, buffers, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
+            renderItemIcon(poseStack, new ItemStack(Items.BOOK), cursor + PRICE_ICON_SIZE / 2.0F, centerY);
             cursor += PRICE_ICON_SIZE;
             if (!bookText.isEmpty()) {
                 cursor += ICON_AMOUNT_GAP;
@@ -151,7 +156,6 @@ public class BlockEntityRenderDispatcherMixin {
 
     private static void renderItemIcon(
             PoseStack poseStack,
-            MultiBufferSource buffers,
             ItemStack stack,
             float centerX,
             float centerY
@@ -163,17 +167,33 @@ public class BlockEntityRenderDispatcherMixin {
         poseStack.pushPose();
         poseStack.translate(centerX, centerY, -0.1F);
         poseStack.scale(-PRICE_ICON_MODEL_SCALE, -PRICE_ICON_MODEL_SCALE, 0.01F);
-        minecraft.getItemRenderer().renderStatic(
-                stack,
-                ItemDisplayContext.FIXED,
-                LightTexture.FULL_BRIGHT,
-                OverlayTexture.NO_OVERLAY,
-                poseStack,
-                buffers,
-                minecraft.level,
-                0
-        );
-        poseStack.popPose();
+        BakedModel model = minecraft.getItemRenderer().getModel(stack, minecraft.level, minecraft.player, 0);
+        boolean flatLighting = !model.usesBlockLight();
+        if (flatLighting) {
+            Lighting.setupForFlatItems();
+        }
+        try {
+            minecraft.getItemRenderer().render(
+                    stack,
+                    ItemDisplayContext.GUI,
+                    false,
+                    poseStack,
+                    ITEM_BUFFERS,
+                    LightTexture.FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY,
+                    model
+            );
+            ITEM_BUFFERS.endBatch();
+        } finally {
+            if (flatLighting) {
+                if (minecraft.level != null && minecraft.level.effects().constantAmbientLight()) {
+                    Lighting.setupNetherLevel();
+                } else {
+                    Lighting.setupLevel();
+                }
+            }
+            poseStack.popPose();
+        }
     }
 
     private static void renderPriceText(

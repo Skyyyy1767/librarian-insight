@@ -49,7 +49,6 @@ public record LibrarianEnchantedBookReference(
     }
 
     public enum PriceGeneration {
-        RANDOM_ENCHANTED_BOOK,
-        REBALANCE_FIXED_MASTER
+        RANDOM_ENCHANTED_BOOK
     }
 }

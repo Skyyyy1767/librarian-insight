@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
@@ -195,7 +196,14 @@ public final class EnchantmentManager {
         currentVillager = villager;
         // The original mod sends an ordinary client interaction, then closes the
         // merchant screen when its offer packet arrives. This does not edit trades.
-        minecraft.gameMode.interact(minecraft.player, villager, InteractionHand.MAIN_HAND);
+        InteractionResult result = minecraft.gameMode.interact(
+                minecraft.player, villager, InteractionHand.MAIN_HAND
+        );
+        // In 1.21.1 the normal Minecraft caller performs the swing after a
+        // successful interaction; MultiPlayerGameMode.interact does not do it.
+        if (result.consumesAction() && result.shouldSwing()) {
+            minecraft.player.swing(InteractionHand.MAIN_HAND);
+        }
     }
 
     private void clean() {

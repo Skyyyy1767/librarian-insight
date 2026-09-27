@@ -6,4 +6,11 @@ dependencies {
     modImplementation "net.fabricmc:fabric-loader:${loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 }
-loom { runs { client { runDir 'run' } } }
+loom {
+    runs {
+        client {
+            runDir 'run'
+            ideConfigGenerated true
+        }
+    }
+}

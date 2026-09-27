@@ -36,49 +36,8 @@ public final class LibrarianTradeCatalog {
             VillagerType.TAIGA
     );
 
-    /* VanillaEnchantmentTagsProvider: TRADEABLE = NON_TREASURE plus these four treasure entries. */
-    private static final List<ResourceKey<Enchantment>> STANDARD_TRADEABLE_ENCHANTMENTS = List.of(
-            Enchantments.PROTECTION,
-            Enchantments.FIRE_PROTECTION,
-            Enchantments.FEATHER_FALLING,
-            Enchantments.BLAST_PROTECTION,
-            Enchantments.PROJECTILE_PROTECTION,
-            Enchantments.RESPIRATION,
-            Enchantments.AQUA_AFFINITY,
-            Enchantments.THORNS,
-            Enchantments.DEPTH_STRIDER,
-            Enchantments.SHARPNESS,
-            Enchantments.SMITE,
-            Enchantments.BANE_OF_ARTHROPODS,
-            Enchantments.KNOCKBACK,
-            Enchantments.FIRE_ASPECT,
-            Enchantments.LOOTING,
-            Enchantments.SWEEPING_EDGE,
-            Enchantments.EFFICIENCY,
-            Enchantments.SILK_TOUCH,
-            Enchantments.UNBREAKING,
-            Enchantments.FORTUNE,
-            Enchantments.POWER,
-            Enchantments.PUNCH,
-            Enchantments.FLAME,
-            Enchantments.INFINITY,
-            Enchantments.LUCK_OF_THE_SEA,
-            Enchantments.LURE,
-            Enchantments.LOYALTY,
-            Enchantments.IMPALING,
-            Enchantments.RIPTIDE,
-            Enchantments.CHANNELING,
-            Enchantments.MULTISHOT,
-            Enchantments.QUICK_CHARGE,
-            Enchantments.PIERCING,
-            Enchantments.DENSITY,
-            Enchantments.BREACH,
-            Enchantments.BINDING_CURSE,
-            Enchantments.VANISHING_CURSE,
-            Enchantments.FROST_WALKER,
-            Enchantments.MENDING
-    );
-
+    // These are the 1.21.1 trade-rebalance datapack contents. Standard trades
+    // are read directly from EnchantmentTags.TRADEABLE below.
     private static final Map<VillagerType, List<ResourceKey<Enchantment>>> REBALANCE_COMMON_ENCHANTMENTS = Map.of(
             VillagerType.DESERT, List.of(Enchantments.FIRE_PROTECTION, Enchantments.THORNS, Enchantments.INFINITY),
             VillagerType.JUNGLE, List.of(Enchantments.FEATHER_FALLING, Enchantments.PROJECTILE_PROTECTION, Enchantments.POWER),
@@ -90,13 +49,13 @@ public final class LibrarianTradeCatalog {
     );
 
     private static final Map<VillagerType, MasterBook> REBALANCE_MASTER_BOOKS = Map.of(
-            VillagerType.DESERT, new MasterBook(Enchantments.EFFICIENCY, 3, true),
-            VillagerType.JUNGLE, new MasterBook(Enchantments.UNBREAKING, 2, true),
-            VillagerType.PLAINS, new MasterBook(Enchantments.PROTECTION, 3, true),
-            VillagerType.SAVANNA, new MasterBook(Enchantments.SHARPNESS, 3, true),
-            VillagerType.SNOW, new MasterBook(Enchantments.SILK_TOUCH, 1, false),
-            VillagerType.SWAMP, new MasterBook(Enchantments.MENDING, 1, false),
-            VillagerType.TAIGA, new MasterBook(Enchantments.FORTUNE, 2, true)
+            VillagerType.DESERT, new MasterBook(Enchantments.EFFICIENCY, 3),
+            VillagerType.JUNGLE, new MasterBook(Enchantments.UNBREAKING, 2),
+            VillagerType.PLAINS, new MasterBook(Enchantments.PROTECTION, 3),
+            VillagerType.SAVANNA, new MasterBook(Enchantments.SHARPNESS, 3),
+            VillagerType.SNOW, new MasterBook(Enchantments.SILK_TOUCH, 1),
+            VillagerType.SWAMP, new MasterBook(Enchantments.MENDING, 1),
+            VillagerType.TAIGA, new MasterBook(Enchantments.FORTUNE, 2)
     );
 
     private static final List<LibrarianTradeReference> STANDARD_TRADES = buildPossibleTrades(false);
@@ -136,10 +95,13 @@ public final class LibrarianTradeCatalog {
         List<LibrarianEnchantedBookReference> result = new ArrayList<>();
 
         if (mode == LibrarianTradeMode.STANDARD) {
-            for (ResourceKey<Enchantment> key : STANDARD_TRADEABLE_ENCHANTMENTS) {
+            for (Holder.Reference<Enchantment> enchantment : enchantments.listElements()
+                    .filter(holder -> holder.is(EnchantmentTags.TRADEABLE))
+                    .sorted(Comparator.comparing(holder -> holder.key().location().toString()))
+                    .toList()) {
                 addAllLevels(
                         result,
-                        enchantments.getOrThrow(key),
+                        enchantment,
                         List.of(1, 2, 3, 4),
                         Set.of(),
                         LibrarianEnchantedBookReference.PriceGeneration.RANDOM_ENCHANTED_BOOK
@@ -167,18 +129,14 @@ public final class LibrarianTradeCatalog {
                     );
                 }
                 Holder<Enchantment> enchantment = enchantments.getOrThrow(master.enchantment());
-                CountRange range = master.fixedCostProvider()
-                        ? rebalanceFixedMasterEmeraldRange(master.level())
-                        : randomEnchantedBookEmeraldRange(enchantment, master.level());
+                CountRange range = randomEnchantedBookEmeraldRange(enchantment, master.level());
                 result.add(new LibrarianEnchantedBookReference(
                         enchantment,
                         master.level(),
                         enchantedBookCost(range),
                         List.of(5),
                         Set.of(type),
-                        master.fixedCostProvider()
-                                ? LibrarianEnchantedBookReference.PriceGeneration.REBALANCE_FIXED_MASTER
-                                : LibrarianEnchantedBookReference.PriceGeneration.RANDOM_ENCHANTED_BOOK
+                        LibrarianEnchantedBookReference.PriceGeneration.RANDOM_ENCHANTED_BOOK
                 ));
             }
         }
@@ -204,20 +162,6 @@ public final class LibrarianTradeCatalog {
         // RandomSource.nextInt(5 + level * 10) is exclusive at its upper bound.
         int maximum = (6 + 13 * level) * multiplier;
         return clampedEmeraldRange(minimum, maximum);
-    }
-
-    /** Exact fixed-master NumberProvider range; UniformGenerator's integer upper bound is inclusive. */
-    public static CountRange rebalanceFixedMasterEmeraldRange(int level) {
-        if (level < 1) {
-            throw new IllegalArgumentException("enchantment level must be positive");
-        }
-        int minimum = 2 + 3 * level;
-        int maximum = minimum + 5 + level * 10;
-        return clampedEmeraldRange(minimum, maximum);
-    }
-
-    public static List<ResourceKey<Enchantment>> standardTradeableEnchantmentKeys() {
-        return STANDARD_TRADEABLE_ENCHANTMENTS;
     }
 
     public static List<ResourceKey<Enchantment>> rebalanceCommonEnchantmentKeys(VillagerType villagerType) {
@@ -282,8 +226,7 @@ public final class LibrarianTradeCatalog {
             trades.add(bookSelector(4, false));
         }
 
-        trades.add(sell("yellow_candle", 5, Items.EMERALD, 3, Items.YELLOW_CANDLE, 1, 12, 30));
-        trades.add(sell("red_candle", 5, Items.EMERALD, 3, Items.RED_CANDLE, 1, 12, 30));
+        trades.add(sell("name_tag", 5, Items.EMERALD, 20, Items.NAME_TAG, 1, 12, 30));
         if (tradeRebalance) {
             trades.add(bookSelector(5, true));
         }
@@ -368,6 +311,6 @@ public final class LibrarianTradeCatalog {
         };
     }
 
-    private record MasterBook(ResourceKey<Enchantment> enchantment, int level, boolean fixedCostProvider) {
+    private record MasterBook(ResourceKey<Enchantment> enchantment, int level) {
     }
 }

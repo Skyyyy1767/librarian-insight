@@ -14,6 +14,7 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
 
 /** Recognizes stock 1.21.1 offers and returns their theoretical natural minimum/range. */
 public final class LibrarianMinimumPrice {
@@ -59,6 +60,16 @@ public final class LibrarianMinimumPrice {
         ItemStack first = offer.getCostA().copy();
         ItemStack second = offer.getCostB().copy();
         return new CurrentCost(first, second.isEmpty() ? Optional.empty() : Optional.of(second));
+    }
+
+    /** Selects the enchanted-book offer represented by the lectern overlay. */
+    public static int enchantedBookOfferIndex(MerchantOffers offers) {
+        for (int index = 0; index < offers.size(); index++) {
+            if (offers.get(index).getResult().is(Items.ENCHANTED_BOOK)) {
+                return index;
+            }
+        }
+        return 0;
     }
 
     private static Optional<Match> resolveEnchantedBook(

@@ -63,9 +63,9 @@ public abstract class ClientPacketListenerMixin {
             }
         }
         manager.addEnchantToCurrentVillager(found);
-        if (manager.isTrackingDone()) {
-            LibrarianInsight.lecternManager.updateAllJobSites();
-        }
+        // Refresh this packet immediately. Waiting for every queued librarian
+        // leaves a newly claimed lectern blank while unrelated queries remain.
+        LibrarianInsight.lecternManager.updateAllJobSites();
     }
 
     private static int countItem(ItemStack first, ItemStack second, net.minecraft.world.item.Item item) {

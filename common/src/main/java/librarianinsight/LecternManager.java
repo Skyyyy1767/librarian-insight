@@ -48,7 +48,10 @@ public final class LecternManager {
 
     public void blockEntityUnloaded(BlockEntity blockEntity) {
         if (blockEntity instanceof LecternBlockEntity) {
-            removeLectern(blockEntity.getBlockPos());
+            // Fabric reports ordinary chunk unloads through this callback too.
+            // Keep the UUID association and last-known offer until an actual
+            // lectern block replacement is observed by LecternBlockMixin.
+            knownLecterns.remove(blockEntity.getBlockPos());
         }
     }
 
