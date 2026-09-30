@@ -15,10 +15,28 @@ The full command name and short alias expose the same settings:
 
 Client settings are stored in `config/librarian-insight.properties`. If that file is absent, settings from the previous `config/visible-librarian-trades.properties` filename are imported automatically. The legacy file is retained.
 
+## Librarian interface
+
+Right-click an empty lectern to open the Librarian Insight reference screen. The
+26.3 interface presents known unlocked offers, the complete possible-trade catalog,
+and live librarian status in three immediately accessible tabs. The dedicated
+enchanted-book browser uses a two-column catalog on suitable windows, a focused
+results/detail flow on compact windows, prominent search, smooth mouse-wheel
+scrolling, and draggable scrollbar thumbs. Recognizable trade inputs and outputs
+use Minecraft's normal item rendering and tooltips.
+
+The screen uses a Minecraft-native dark-oak, parchment, lapis, and gold visual
+language with light and dark themes. Fast time-based entrance, hover, selection,
+tab, and scroll transitions keep input responsive while clarifying state changes.
+The layout derives every panel from the current scaled window size, shortens labels
+where needed, changes the status view to one column on narrow screens, clips all
+scroll regions, and keeps tooltips inside Minecraft's normal bounds. The interface
+remains read-only; it only explains existing trade and villager state.
+
 ## Loaders and builds
 
 Install the JAR for your loader on the client. The mod ID remains `librarian_insight`
-and the mod version remains `1.0.1.1+mc26.3`. No server installation is required.
+and the mod version is `1.2+mc26.3`. No server installation is required.
 
 | Component | Version |
 | --- | --- |
@@ -72,9 +90,9 @@ project synchronization. A standalone `clean` removes them with the rest of
 
 Distributable JARs:
 
-- `fabric/build/libs/librarian-insight-fabric-1.0.1.1+mc26.3.jar`
-- `neoforge/build/libs/librarian-insight-neoforge-1.0.1.1+mc26.3.jar`
-- `forge/build/libs/librarian-insight-forge-1.0.1.1+mc26.3.jar`
+- `fabric/build/libs/librarian-insight-fabric-1.2+mc26.3.jar`
+- `neoforge/build/libs/librarian-insight-neoforge-1.2+mc26.3.jar`
+- `forge/build/libs/librarian-insight-forge-1.2+mc26.3.jar`
 
 The corresponding `-sources.jar` files are for development. `verifyDistribution`
 runs with each loader's `check`/`build` task and checks metadata, Java 25 bytecode,
@@ -83,7 +101,8 @@ CI builds all three loaders and uploads all three sets of artifacts.
 
 ## Project architecture
 
-- `common`: source-only module containing UI, rendering, trade queries and snapshots,
+- `common`: source-only module containing UI, responsive layout and motion state,
+  rendering, trade queries and snapshots,
   calculations, commands, config persistence, textures, all ten original mixins,
   and the shared tests. It has no loader imports and produces no runtime JAR.
 - `fabric`: Fabric entrypoint, callbacks, config-directory lookup, command feedback,
@@ -135,7 +154,10 @@ refresh; empty-lectern browsing and book placement; all three menu tabs, themes,
 scrolling, and tooltips; merchant current/minimum overlays; lectern text and item
 icons in all orientations; villager icons; profession changes; standard/rebalanced
 trades and custom-trade fallbacks. Test integrated-server status and remote-server
-limitations separately. Commands and config migration are covered by automated tests.
+limitations separately. Exercise compact, normal, and large window sizes at several
+GUI scales, including the one-column status layout and the searchable book browser.
+Commands, config migration, and responsive layout bounds are covered by automated
+tests.
 
 ## Original project and license
 

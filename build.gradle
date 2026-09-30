@@ -1,7 +1,7 @@
 plugins {
     id 'base'
     id 'idea'
-    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.2'
+    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1'
     id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
     id 'net.neoforged.moddev' version "${moddev_version}" apply false
     id 'net.minecraftforge.gradle' version "${forgegradle_version}" apply false

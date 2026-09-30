@@ -17,6 +17,7 @@ import librarianinsight.trade.LibrarianTradeCatalog;
 import librarianinsight.trade.LibrarianTradeMode;
 import librarianinsight.trade.LibrarianTradeReference;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
@@ -36,39 +37,54 @@ import org.jspecify.annotations.Nullable;
 
 /** Icon-first, read-only librarian reference browser for an empty lectern. */
 public final class LibrarianInfoScreen extends Screen {
-    private static final int HEADER_HEIGHT = 40;
-    private static final int FOOTER_HEIGHT = 17;
     private static final int CURRENT_ROW_HEIGHT = 43;
     private static final int BOOK_ROW_HEIGHT = 31;
     private static final float MIN_TEXT_SCALE = 0.75F;
+    private static final Object CLOSE_BUTTON_MOTION_KEY = new Object();
 
     private final BlockPos lecternPos;
     private final List<HitTarget> hitTargets = new ArrayList<>();
+    private final List<ScrollbarTarget> scrollbarTargets = new ArrayList<>();
+    private final LibrarianScreenMotion motion = new LibrarianScreenMotion();
     private LibrarianMenuPalette palette = LibrarianMenuPalette.LIGHT;
     private Tab tab = Tab.CURRENT;
+    private Tab previousTab = Tab.CURRENT;
+    private long frameTime;
+    private LibrarianScreenLayout.@Nullable Spec layoutSpec;
+    private @Nullable EditBox bookSearch;
+    private String bookQuery = "";
     private int selectedCurrent;
     private int currentScroll;
+    private double currentScrollVisual;
     private int selectedProfessionLevel = 1;
     private @Nullable LibrarianTradeReference selectedPossible;
     private @Nullable LibrarianEnchantedBookReference selectedBook;
     private boolean browsingBooks;
     private int bookProfessionLevel = 1;
     private int bookScroll;
+    private double bookScrollVisual;
+    private int bookGridColumns = 1;
     private int currentDetailScroll;
+    private double currentDetailScrollVisual;
     private int possibleDetailScroll;
+    private double possibleDetailScrollVisual;
     private int possibleGridScroll;
+    private double possibleGridScrollVisual;
     private int currentDetailMaxScroll;
     private int possibleDetailMaxScroll;
     private int possibleGridMaxScroll;
     private int statusScroll;
+    private double statusScrollVisual;
     private int statusMaxScroll;
     private int statusDetailScroll;
+    private double statusDetailScrollVisual;
     private int statusDetailMaxScroll;
     private @Nullable Rect activeDetailBounds;
     private @Nullable Rect activePossibleGridBounds;
     private @Nullable Rect activeStatusBounds;
     private @Nullable Rect activeClickClip;
     private @Nullable Rect activeTooltipClip;
+    private @Nullable ScrollbarDrag activeScrollbarDrag;
     private @Nullable KnownLibrarianSnapshot cachedSnapshot;
     private MerchantOffers cachedOffers = new MerchantOffers();
     private @Nullable UUID refreshRequestedFor;
@@ -87,14 +103,38 @@ public final class LibrarianInfoScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        EditBox search = new EditBox(font, 0, 0, 120, 14, Component.literal("Search enchantments"));
+        search.setBordered(false);
+        search.setMaxLength(48);
+        search.setHint(Component.literal("Search enchantments"));
+        search.setTextShadow(false);
+        search.setValue(bookQuery);
+        search.setResponder(value -> {
+            bookQuery = value;
+            bookScroll = 0;
+            bookScrollVisual = 0.0;
+            selectedBook = null;
+            possibleDetailScroll = 0;
+            possibleDetailScrollVisual = 0.0;
+        });
+        search.visible = false;
+        bookSearch = addRenderableWidget(search);
+        activeScrollbarDrag = null;
         requestStatusSnapshot(true);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        frameTime = System.nanoTime();
+        motion.beginFrame(frameTime);
         palette = LibrarianMenuPalette.forTheme(LibrarianInsight.priceDisplay.getMenuTheme());
+        if (bookSearch != null) {
+            bookSearch.visible = false;
+            bookSearch.setTextColor(palette.primaryText());
+            bookSearch.setTextColorUneditable(palette.secondaryText());
+        }
         hitTargets.clear();
+        scrollbarTargets.clear();
         activeDetailBounds = null;
         activePossibleGridBounds = null;
         activeStatusBounds = null;
@@ -106,31 +146,37 @@ public final class LibrarianInfoScreen extends Screen {
         statusMaxScroll = 0;
         statusDetailMaxScroll = 0;
 
+        float opening = motion.openProgress(frameTime);
+        graphics.fillGradient(0, 0, width, height,
+                LibrarianScreenMotion.withAlpha(palette.backdropTop(), opening),
+                LibrarianScreenMotion.withAlpha(palette.backdropBottom(), opening));
+        layoutSpec = LibrarianScreenLayout.resolve(width, height, motion.entranceOffset(frameTime));
         Layout layout = layout();
-        graphics.fill(layout.x(), layout.y(), layout.right(), layout.bottom(), palette.screenBackground());
-        graphics.outline(layout.x(), layout.y(), layout.width(), layout.height(), palette.border());
+        drawShell(graphics, layout);
         graphics.enableScissor(layout.x() + 1, layout.y() + 1, layout.right() - 1, layout.bottom() - 1);
-        drawFittedText(graphics, title.getString(),
-                new Rect(layout.x() + 5, layout.y() + 3, layout.width() - 10, 15),
-                1, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.headingText());
+        drawHeader(graphics, layout, mouseX, mouseY);
 
-        int tabY = layout.y() + 21;
-        int tabWidth = Math.max(1, (layout.width() - 14) / 3);
-        Rect currentTab = new Rect(layout.x() + 5, tabY, tabWidth, 17);
-        Rect possibleTab = new Rect(currentTab.right() + 2, tabY, tabWidth, 17);
-        Rect statusTab = new Rect(possibleTab.right() + 2, tabY, layout.right() - possibleTab.right() - 7, 17);
-        drawTab(graphics, currentTab, "Current Librarian", tab == Tab.CURRENT, mouseX, mouseY,
-                () -> switchTab(Tab.CURRENT));
-        drawTab(graphics, possibleTab, "Possible Trades", tab == Tab.POSSIBLE, mouseX, mouseY,
-                () -> switchTab(Tab.POSSIBLE));
-        drawTab(graphics, statusTab, "Villager Status", tab == Tab.STATUS, mouseX, mouseY,
-                () -> switchTab(Tab.STATUS));
+        int tabY = layout.y() + layout.headerHeight() - (layout.compact() ? 20 : 23);
+        int tabHeight = layout.compact() ? 18 : 21;
+        int tabWidth = Math.max(1, (layout.width() - 16) / 3);
+        Rect currentTab = new Rect(layout.x() + 5, tabY, tabWidth, tabHeight);
+        Rect possibleTab = new Rect(currentTab.right() + 3, tabY, tabWidth, tabHeight);
+        Rect statusTab = new Rect(possibleTab.right() + 3, tabY, layout.right() - possibleTab.right() - 8, tabHeight);
+        boolean shortLabels = layout.compact();
+        drawTab(graphics, currentTab, shortLabels ? "Current" : "Current Librarian", Items.ENCHANTED_BOOK,
+                Tab.CURRENT, mouseX, mouseY);
+        drawTab(graphics, possibleTab, shortLabels ? "Trades" : "Possible Trades", Items.EMERALD,
+                Tab.POSSIBLE, mouseX, mouseY);
+        drawTab(graphics, statusTab, shortLabels ? "Status" : "Villager Status", Items.BELL,
+                Tab.STATUS, mouseX, mouseY);
+        drawTabIndicator(graphics, currentTab, possibleTab, statusTab);
 
+        int contentOffset = motion.contentOffset(frameTime);
         Rect content = new Rect(
                 layout.x() + 5,
-                layout.y() + HEADER_HEIGHT,
+                layout.y() + layout.headerHeight() + contentOffset,
                 layout.width() - 10,
-                layout.height() - HEADER_HEIGHT - FOOTER_HEIGHT
+                Math.max(1, layout.contentHeight() - contentOffset)
         );
         switch (tab) {
             case CURRENT -> drawCurrentTab(graphics, content, mouseX, mouseY);
@@ -138,10 +184,99 @@ public final class LibrarianInfoScreen extends Screen {
             case STATUS -> drawStatusTab(graphics, content, mouseX, mouseY);
         }
 
-        drawFittedText(graphics, "Read-only • no trades are changed",
-                new Rect(layout.x() + 7, layout.bottom() - 14, layout.width() - 14, 11),
-                1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.secondaryText());
+        drawFooter(graphics, layout);
         graphics.disableScissor();
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+    }
+
+    private void drawShell(GuiGraphicsExtractor graphics, Layout layout) {
+        graphics.fill(layout.x() + 5, layout.y() + 6, layout.right() + 5, layout.bottom() + 6, palette.shadow());
+        graphics.fill(layout.x() + 2, layout.y() + 3, layout.right() + 2, layout.bottom() + 3,
+                LibrarianScreenMotion.withAlpha(palette.shadow(), 0.72F));
+        graphics.fillGradient(layout.x(), layout.y(), layout.right(), layout.bottom(),
+                palette.screenBackground(), palette.screenShade());
+        graphics.outline(layout.x(), layout.y(), layout.width(), layout.height(), palette.border());
+        graphics.outline(layout.x() + 1, layout.y() + 1, Math.max(1, layout.width() - 2),
+                Math.max(1, layout.height() - 2), palette.innerBorder());
+        graphics.fill(layout.x() + 3, layout.y() + 3, layout.x() + 5, layout.y() + 5, palette.accent());
+        graphics.fill(layout.right() - 5, layout.y() + 3, layout.right() - 3, layout.y() + 5, palette.accent());
+        graphics.fill(layout.x() + 3, layout.bottom() - 5, layout.x() + 5, layout.bottom() - 3, palette.accent());
+        graphics.fill(layout.right() - 5, layout.bottom() - 5, layout.right() - 3, layout.bottom() - 3,
+                palette.accent());
+    }
+
+    private void drawHeader(GuiGraphicsExtractor graphics, Layout layout, int mouseX, int mouseY) {
+        int bottom = layout.y() + layout.headerHeight();
+        graphics.fillGradient(layout.x() + 2, layout.y() + 2, layout.right() - 2, bottom,
+                palette.headerTop(), palette.headerBottom());
+        graphics.fill(layout.x() + 2, bottom - 2, layout.right() - 2, bottom, palette.border());
+        graphics.horizontalLine(layout.x() + 4, layout.right() - 5, bottom - 3, palette.accent());
+
+        int iconX = layout.x() + 10;
+        int iconY = layout.y() + (layout.compact() ? 5 : 8);
+        graphics.fakeItem(new ItemStack(Items.ENCHANTED_BOOK), iconX, iconY);
+        int closeSize = layout.compact() ? 16 : 18;
+        Rect close = new Rect(layout.right() - closeSize - 7, layout.y() + 6, closeSize, closeSize);
+        drawCloseButton(graphics, close, mouseX, mouseY);
+
+        int titleX = iconX + 22;
+        int titleRight = close.x() - 5;
+        drawFittedText(graphics, title.getString(),
+                new Rect(titleX, layout.y() + (layout.compact() ? 4 : 6), Math.max(1, titleRight - titleX), 13),
+                1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headerText());
+        if (!layout.compact()) {
+            drawFittedText(graphics, "Lectern trade compendium",
+                    new Rect(titleX, layout.y() + 19, Math.max(1, titleRight - titleX), 10),
+                    1, MIN_TEXT_SCALE, TextAlignment.LEFT, true,
+                    LibrarianScreenMotion.mix(palette.headerText(), palette.accentBright(), 0.32F));
+        }
+        if (!layout.compact() && layout.width() >= 470) {
+            String badge = "READ ONLY";
+            int badgeWidth = font.width(badge) + 10;
+            int badgeX = close.x() - badgeWidth - 7;
+            graphics.fill(badgeX, layout.y() + 8, badgeX + badgeWidth, layout.y() + 20, 0x50355C91);
+            graphics.outline(badgeX, layout.y() + 8, badgeWidth, 12, palette.selectedBorder());
+            graphics.text(font, badge, badgeX + 5, layout.y() + 10, palette.headerText(), false);
+        }
+    }
+
+    private void drawTabIndicator(GuiGraphicsExtractor graphics, Rect current, Rect possible, Rect status) {
+        Rect from = tabRect(previousTab, current, possible, status);
+        Rect to = tabRect(tab, current, possible, status);
+        float progress = motion.tabProgress(frameTime);
+        int x = Math.round(from.x() + (to.x() - from.x()) * progress);
+        int right = Math.round(from.right() + (to.right() - from.right()) * progress);
+        int y = to.bottom() - 3;
+        graphics.fill(x + 3, y, Math.max(x + 4, right - 3), y + 2, palette.accentBright());
+    }
+
+    private static Rect tabRect(Tab tab, Rect current, Rect possible, Rect status) {
+        return switch (tab) {
+            case CURRENT -> current;
+            case POSSIBLE -> possible;
+            case STATUS -> status;
+        };
+    }
+
+    private void drawFooter(GuiGraphicsExtractor graphics, Layout layout) {
+        int y = layout.bottom() - layout.footerHeight();
+        graphics.fillGradient(layout.x() + 2, y, layout.right() - 2, layout.bottom() - 2,
+                palette.screenShade(), palette.headerBottom());
+        graphics.horizontalLine(layout.x() + 4, layout.right() - 5, y, palette.border());
+        String note = "\u25C6  Read only \u2022 trades remain unchanged";
+        boolean showPosition = !layout.compact() && layout.width() >= 430;
+        String position = showPosition
+                ? lecternPos.getX() + ", " + lecternPos.getY() + ", " + lecternPos.getZ()
+                : "";
+        int noteWidth = layout.width() - 16 - (showPosition ? font.width(position) + 14 : 0);
+        drawFittedText(graphics, note,
+                new Rect(layout.x() + 8, y + 2, Math.max(1, noteWidth), layout.footerHeight() - 4),
+                1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headerText());
+        if (showPosition) {
+            int positionWidth = font.width(position);
+            graphics.text(font, position, layout.right() - positionWidth - 9,
+                    y + Math.max(2, (layout.footerHeight() - font.lineHeight) / 2), palette.headerText(), false);
+        }
     }
 
     private void drawCurrentTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
@@ -156,7 +291,7 @@ public final class LibrarianInfoScreen extends Screen {
         }
         updateCachedOffers(snapshot);
 
-        int listWidth = Math.max(1, Math.min(218, (content.width() - 5) / 2));
+        int listWidth = Math.max(1, Math.min(252, (content.width() - 5) / 2));
         Rect list = new Rect(content.x(), content.y(), listWidth, content.height());
         Rect detail = new Rect(list.right() + 5, content.y(), content.right() - list.right() - 5, content.height());
         panel(graphics, list);
@@ -192,34 +327,40 @@ public final class LibrarianInfoScreen extends Screen {
 
         int rowHeight = currentRowHeight(rows.width());
         int visibleRows = Math.max(1, rows.height() / rowHeight);
-        currentScroll = clamp(currentScroll, 0, Math.max(0, cachedOffers.size() - visibleRows));
+        int maxCurrentScroll = Math.max(0, cachedOffers.size() - visibleRows);
+        currentScroll = clamp(currentScroll, 0, maxCurrentScroll);
+        currentScrollVisual = Math.max(0.0, Math.min(maxCurrentScroll, currentScrollVisual));
+        currentScrollVisual = animateScroll(ScrollRegion.CURRENT_LIST, currentScrollVisual, currentScroll);
+        int firstVisible = clamp((int)Math.floor(currentScrollVisual), 0, maxCurrentScroll);
+        int rowOffset = (int)Math.round((currentScrollVisual - firstVisible) * rowHeight);
         selectedCurrent = clamp(selectedCurrent, 0, cachedOffers.size() - 1);
         graphics.enableScissor(rows.x(), rows.y(), rows.right(), rows.bottom());
         activeTooltipClip = rows;
-        for (int visibleIndex = 0; visibleIndex < visibleRows; visibleIndex++) {
-            int offerIndex = currentScroll + visibleIndex;
+        for (int visibleIndex = 0; visibleIndex <= visibleRows; visibleIndex++) {
+            int offerIndex = firstVisible + visibleIndex;
             if (offerIndex >= cachedOffers.size()) {
                 break;
             }
-            Rect row = new Rect(rows.x(), rows.y() + visibleIndex * rowHeight, rows.width(), rowHeight - 2);
+            Rect row = new Rect(rows.x(), rows.y() + visibleIndex * rowHeight - rowOffset,
+                    rows.width(), rowHeight - 2);
             MerchantOffer offer = cachedOffers.get(offerIndex);
             Rect visibleRow = intersection(row, rows);
             boolean hovered = visibleRow != null && visibleRow.contains(mouseX, mouseY);
-            graphics.fill(row.x(), row.y(), row.right(), row.bottom(),
-                    offerIndex == selectedCurrent ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(row.x(), row.y(), row.width(), row.height(),
-                    offerIndex == selectedCurrent ? palette.selectedBorder() : palette.separator());
+            selectableSurface(graphics, row, offer, offerIndex == selectedCurrent, hovered);
             drawOfferFlow(graphics, offer, row.x() + 3, row.y() + 5, mouseX, mouseY, row.width(), row.height());
             if (visibleRow != null) {
                 hitTargets.add(new HitTarget(visibleRow, () -> {
                     selectedCurrent = offerIndex;
                     currentDetailScroll = 0;
+                    currentDetailScrollVisual = 0.0;
+                    motion.selectionChanged(System.nanoTime());
                 }));
             }
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawScrollbar(graphics, rows, cachedOffers.size(), visibleRows, currentScroll);
+        drawScrollbar(graphics, rows, cachedOffers.size(), visibleRows, currentScrollVisual,
+                ScrollRegion.CURRENT_LIST);
         drawCurrentDetail(graphics, detail, cachedOffers.get(selectedCurrent), snapshot, association, mouseX, mouseY);
     }
 
@@ -240,14 +381,17 @@ public final class LibrarianInfoScreen extends Screen {
         Rect viewport = new Rect(content.x() + 3, content.y() + 19, content.width() - 6, content.height() - 22);
         activeStatusBounds = viewport;
         int gap = 4;
-        int columns = 2;
-        int cardWidth = Math.max(1, (viewport.width() - gap - 3) / columns);
+        int columns = layoutSpec == null ? 2 : layoutSpec.statusColumns();
+        int cardWidth = Math.max(1, (viewport.width() - gap * (columns - 1) - 3) / columns);
         int cardHeight = 61;
         StatusCard[] cards = StatusCard.values();
         int rows = (cards.length + columns - 1) / columns;
         int totalHeight = rows * (cardHeight + gap) - gap;
         statusMaxScroll = Math.max(0, totalHeight - viewport.height());
         statusScroll = clamp(statusScroll, 0, statusMaxScroll);
+        statusScrollVisual = Math.max(0.0, Math.min(statusMaxScroll, statusScrollVisual));
+        statusScrollVisual = animateScroll(ScrollRegion.STATUS_DASHBOARD, statusScrollVisual, statusScroll);
+        int displayedScroll = (int)Math.round(statusScrollVisual);
 
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
         activeTooltipClip = viewport;
@@ -257,16 +401,13 @@ public final class LibrarianInfoScreen extends Screen {
             int row = index / columns;
             Rect box = new Rect(
                     viewport.x() + column * (cardWidth + gap),
-                    viewport.y() + row * (cardHeight + gap) - statusScroll,
+                    viewport.y() + row * (cardHeight + gap) - displayedScroll,
                     cardWidth,
                     cardHeight
             );
             Rect visible = intersection(box, viewport);
             boolean hovered = visible != null && visible.contains(mouseX, mouseY);
-            graphics.fill(box.x(), box.y(), box.right(), box.bottom(),
-                    hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(box.x(), box.y(), box.width(), box.height(),
-                    hovered ? palette.selectedBorder() : palette.separator());
+            selectableSurface(graphics, box, card, false, hovered);
             drawFittedText(graphics, card.title,
                     new Rect(box.x() + 3, box.y() + 3, box.width() - 6, 12),
                     1, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.headingText());
@@ -279,12 +420,15 @@ public final class LibrarianInfoScreen extends Screen {
                 hitTargets.add(new HitTarget(visible, () -> {
                     selectedStatusCard = card;
                     statusDetailScroll = 0;
+                    statusDetailScrollVisual = 0.0;
+                    motion.selectionChanged(System.nanoTime());
                 }));
             }
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawPixelScrollbar(graphics, viewport, totalHeight, statusScroll);
+        drawPixelScrollbar(graphics, viewport, totalHeight, statusScrollVisual,
+                ScrollRegion.STATUS_DASHBOARD);
     }
 
     private void drawStatusDetail(
@@ -298,6 +442,8 @@ public final class LibrarianInfoScreen extends Screen {
         drawSmallButton(graphics, back, "Back", false, mouseX, mouseY, () -> {
             selectedStatusCard = null;
             statusDetailScroll = 0;
+            statusDetailScrollVisual = 0.0;
+            motion.selectionChanged(System.nanoTime());
         });
         drawFittedText(graphics, card.title,
                 new Rect(back.right() + 5, content.y() + 3, content.right() - back.right() - 10, 18),
@@ -316,10 +462,14 @@ public final class LibrarianInfoScreen extends Screen {
         }
         statusDetailMaxScroll = Math.max(0, totalHeight - viewport.height());
         statusDetailScroll = clamp(statusDetailScroll, 0, statusDetailMaxScroll);
+        statusDetailScrollVisual = Math.max(0.0, Math.min(statusDetailMaxScroll, statusDetailScrollVisual));
+        statusDetailScrollVisual = animateScroll(
+                ScrollRegion.STATUS_DETAIL, statusDetailScrollVisual, statusDetailScroll
+        );
 
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
         activeTooltipClip = viewport;
-        int y = viewport.y() + 3 - statusDetailScroll;
+        int y = viewport.y() + 3 - (int)Math.round(statusDetailScrollVisual);
         for (int index = 0; index < rows.size(); index++) {
             StatusDetailRow row = rows.get(index);
             TextLayout textLayout = layouts.get(index);
@@ -336,7 +486,8 @@ public final class LibrarianInfoScreen extends Screen {
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawPixelScrollbar(graphics, viewport, totalHeight, statusDetailScroll);
+        drawPixelScrollbar(graphics, viewport, totalHeight, statusDetailScrollVisual,
+                ScrollRegion.STATUS_DETAIL);
     }
 
     private CardSummary statusSummary(StatusCard card) {
@@ -617,10 +768,14 @@ public final class LibrarianInfoScreen extends Screen {
                 + 8 + confidence.height() + (ambiguous ? 3 + ambiguity.height() : 0) + 4;
         currentDetailMaxScroll = Math.max(0, contentHeight - viewport.height());
         currentDetailScroll = clamp(currentDetailScroll, 0, currentDetailMaxScroll);
+        currentDetailScrollVisual = Math.max(0.0, Math.min(currentDetailMaxScroll, currentDetailScrollVisual));
+        currentDetailScrollVisual = animateScroll(
+                ScrollRegion.CURRENT_DETAIL, currentDetailScrollVisual, currentDetailScroll
+        );
 
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
         activeTooltipClip = viewport;
-        int y = viewport.y() + 4 - currentDetailScroll;
+        int y = viewport.y() + 4 - (int)Math.round(currentDetailScrollVisual);
         drawTextLayout(graphics, nameLayout, new Rect(viewport.x(), y, textWidth, nameLayout.height()),
                 TextAlignment.LEFT, false, palette.primaryText());
         y += nameLayout.height() + 3;
@@ -651,7 +806,8 @@ public final class LibrarianInfoScreen extends Screen {
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawPixelScrollbar(graphics, viewport, contentHeight, currentDetailScroll);
+        drawPixelScrollbar(graphics, viewport, contentHeight, currentDetailScrollVisual,
+                ScrollRegion.CURRENT_DETAIL);
     }
 
     private void drawAssociationNote(GuiGraphicsExtractor graphics, Rect detail, LecternAssociation association) {
@@ -686,13 +842,18 @@ public final class LibrarianInfoScreen extends Screen {
 
     private void drawPossibleTab(GuiGraphicsExtractor graphics, Rect content, int mouseX, int mouseY) {
         LibrarianTradeMode mode = currentMode();
+        if (browsingBooks) {
+            drawBookBrowser(graphics, content, mode, mouseX, mouseY);
+            return;
+        }
         int levelY = content.y();
         int levelWidth = Math.max(1, (content.width() - 8) / 5);
         int levelHeight = 23;
         for (int level = 1; level <= 5; level++) {
             int captured = level;
             Rect button = new Rect(content.x() + (level - 1) * (levelWidth + 2), levelY, levelWidth, levelHeight);
-            drawSmallButton(graphics, button, levelName(level), selectedProfessionLevel == level && !browsingBooks,
+            drawSmallButton(graphics, button, levelButtonName(level, content.width()),
+                    selectedProfessionLevel == level && !browsingBooks,
                     mouseX, mouseY, () -> selectLevel(captured));
         }
 
@@ -708,15 +869,11 @@ public final class LibrarianInfoScreen extends Screen {
             bodyY += banner.height() + 3;
         }
         Rect body = new Rect(content.x(), bodyY, content.width(), Math.max(1, content.bottom() - bodyY));
-        if (browsingBooks) {
-            drawBookBrowser(graphics, body, mode, mouseX, mouseY);
-        } else {
-            drawPossibleGrid(graphics, body, mode, mouseX, mouseY);
-        }
+        drawPossibleGrid(graphics, body, mode, mouseX, mouseY);
     }
 
     private void drawPossibleGrid(GuiGraphicsExtractor graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
-        int gridWidth = Math.max(1, Math.min(218, (body.width() - 5) / 2));
+        int gridWidth = Math.max(1, Math.min(250, (body.width() - 5) / 2));
         Rect grid = new Rect(body.x(), body.y(), gridWidth, body.height());
         Rect detail = new Rect(grid.right() + 5, body.y(), body.right() - grid.right() - 5, body.height());
         panel(graphics, grid);
@@ -730,21 +887,26 @@ public final class LibrarianInfoScreen extends Screen {
                 mode, type, selectedProfessionLevel
         );
         Rect gridRows = new Rect(grid.x() + 3, grid.y() + 19, grid.width() - 6, Math.max(1, grid.height() - 22));
-        int columns = 2;
+        int columns = layoutSpec == null ? 2 : layoutSpec.possibleGridColumns(gridRows.width());
         int cellGap = 4;
         int availableGridWidth = gridRows.width();
-        int cellWidth = Math.max(1, (availableGridWidth - cellGap) / columns);
+        int cellWidth = Math.max(1, (availableGridWidth - cellGap * (columns - 1)) / columns);
         int cellHeight = possibleCellHeight(trades, cellWidth);
         int rowCount = (trades.size() + columns - 1) / columns;
         int gridContentHeight = rowCount * (cellHeight + cellGap) - (rowCount == 0 ? 0 : cellGap);
         if (gridContentHeight > gridRows.height()) {
             availableGridWidth = Math.max(1, gridRows.width() - 3);
-            cellWidth = Math.max(1, (availableGridWidth - cellGap) / columns);
+            cellWidth = Math.max(1, (availableGridWidth - cellGap * (columns - 1)) / columns);
             cellHeight = possibleCellHeight(trades, cellWidth);
             gridContentHeight = rowCount * (cellHeight + cellGap) - (rowCount == 0 ? 0 : cellGap);
         }
         possibleGridMaxScroll = Math.max(0, gridContentHeight - gridRows.height());
         possibleGridScroll = clamp(possibleGridScroll, 0, possibleGridMaxScroll);
+        possibleGridScrollVisual = Math.max(0.0, Math.min(possibleGridMaxScroll, possibleGridScrollVisual));
+        possibleGridScrollVisual = animateScroll(
+                ScrollRegion.POSSIBLE_GRID, possibleGridScrollVisual, possibleGridScroll
+        );
+        int displayedGridScroll = (int)Math.round(possibleGridScrollVisual);
         activePossibleGridBounds = gridRows;
         graphics.enableScissor(gridRows.x(), gridRows.y(), gridRows.right(), gridRows.bottom());
         activeTooltipClip = gridRows;
@@ -754,17 +916,14 @@ public final class LibrarianInfoScreen extends Screen {
             int rowIndex = index / columns;
             Rect cell = new Rect(
                     gridRows.x() + column * (cellWidth + cellGap),
-                    gridRows.y() + rowIndex * (cellHeight + cellGap) - possibleGridScroll,
+                    gridRows.y() + rowIndex * (cellHeight + cellGap) - displayedGridScroll,
                     cellWidth,
                     cellHeight
             );
             boolean selected = trade.equals(selectedPossible);
             Rect visibleCell = intersection(cell, gridRows);
             boolean hovered = visibleCell != null && visibleCell.contains(mouseX, mouseY);
-            graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(),
-                    selected ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-            graphics.outline(cell.x(), cell.y(), cell.width(), cell.height(),
-                    selected ? palette.selectedBorder() : palette.separator());
+            selectableSurface(graphics, cell, trade, selected, hovered);
             ItemStack icon = trade.iconStack();
             int iconX = cell.x() + (cell.width() - 16) / 2;
             drawIcon(graphics, icon, iconX, cell.y() + 4, mouseX, mouseY, false);
@@ -777,7 +936,8 @@ public final class LibrarianInfoScreen extends Screen {
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawPixelScrollbar(graphics, gridRows, gridContentHeight, possibleGridScroll);
+        drawPixelScrollbar(graphics, gridRows, gridContentHeight, possibleGridScrollVisual,
+                ScrollRegion.POSSIBLE_GRID);
         if (selectedPossible == null && !trades.isEmpty()) {
             selectedPossible = trades.getFirst();
         }
@@ -816,11 +976,17 @@ public final class LibrarianInfoScreen extends Screen {
                     + promptBandHeight + 6 + buttonHeight + 4;
             possibleDetailMaxScroll = Math.max(0, contentHeight - viewport.height());
             possibleDetailScroll = clamp(possibleDetailScroll, 0, possibleDetailMaxScroll);
+            possibleDetailScrollVisual = Math.max(0.0,
+                    Math.min(possibleDetailMaxScroll, possibleDetailScrollVisual));
+            possibleDetailScrollVisual = animateScroll(
+                    ScrollRegion.POSSIBLE_DETAIL, possibleDetailScrollVisual, possibleDetailScroll
+            );
+            int displayedDetailScroll = (int)Math.round(possibleDetailScrollVisual);
 
             graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
             activeTooltipClip = viewport;
             activeClickClip = viewport;
-            int y = viewport.y() + 4 - possibleDetailScroll;
+            int y = viewport.y() + 4 - displayedDetailScroll;
             drawTextLayout(graphics, titleLayout, new Rect(viewport.x(), y, textWidth, titleLayout.height()),
                     TextAlignment.LEFT, false, palette.primaryText());
             y += titleLayout.height() + 3;
@@ -838,12 +1004,16 @@ public final class LibrarianInfoScreen extends Screen {
                 bookProfessionLevel = selectedProfessionLevel;
                 selectedBook = null;
                 bookScroll = 0;
+                bookScrollVisual = 0.0;
                 possibleDetailScroll = 0;
+                possibleDetailScrollVisual = 0.0;
+                motion.selectionChanged(System.nanoTime());
             });
             activeClickClip = null;
             activeTooltipClip = null;
             graphics.disableScissor();
-            drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScroll);
+            drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScrollVisual,
+                    ScrollRegion.POSSIBLE_DETAIL);
         } else {
             TextLayout receives = planText("Receives", textWidth, 2, MIN_TEXT_SCALE);
             TextLayout available = planText(
@@ -853,10 +1023,16 @@ public final class LibrarianInfoScreen extends Screen {
                     + 16 + 7 + receives.height() + 2 + 16 + 6 + available.height() + 4;
             possibleDetailMaxScroll = Math.max(0, contentHeight - viewport.height());
             possibleDetailScroll = clamp(possibleDetailScroll, 0, possibleDetailMaxScroll);
+            possibleDetailScrollVisual = Math.max(0.0,
+                    Math.min(possibleDetailMaxScroll, possibleDetailScrollVisual));
+            possibleDetailScrollVisual = animateScroll(
+                    ScrollRegion.POSSIBLE_DETAIL, possibleDetailScrollVisual, possibleDetailScroll
+            );
+            int displayedDetailScroll = (int)Math.round(possibleDetailScrollVisual);
 
             graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
             activeTooltipClip = viewport;
-            int y = viewport.y() + 4 - possibleDetailScroll;
+            int y = viewport.y() + 4 - displayedDetailScroll;
             drawTextLayout(graphics, titleLayout, new Rect(viewport.x(), y, textWidth, titleLayout.height()),
                     TextAlignment.LEFT, false, palette.primaryText());
             y += titleLayout.height() + 3;
@@ -877,70 +1053,215 @@ public final class LibrarianInfoScreen extends Screen {
                     TextAlignment.LEFT, false, palette.primaryText());
             activeTooltipClip = null;
             graphics.disableScissor();
-            drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScroll);
+            drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScrollVisual,
+                    ScrollRegion.POSSIBLE_DETAIL);
         }
     }
 
-    private void drawBookBrowser(GuiGraphicsExtractor graphics, Rect body, LibrarianTradeMode mode, int mouseX, int mouseY) {
-        int listWidth = Math.max(1, Math.min(245, (body.width() - 5) / 2));
-        Rect listPanel = new Rect(body.x(), body.y(), listWidth, body.height());
-        Rect detail = new Rect(listPanel.right() + 5, body.y(), body.right() - listPanel.right() - 5, body.height());
-        panel(graphics, listPanel);
-        panel(graphics, detail);
-        Rect back = new Rect(listPanel.x() + 5, listPanel.y() + 4, 42, 17);
-        drawSmallButton(graphics, back, "Back", false, mouseX, mouseY, () -> browsingBooks = false);
-        drawFittedText(graphics, levelName(bookProfessionLevel) + " books",
-                new Rect(listPanel.x() + 53, listPanel.y() + 3, Math.max(1, listPanel.width() - 59), 19),
-                2, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+    private void drawBookBrowser(
+            GuiGraphicsExtractor graphics,
+            Rect body,
+            LibrarianTradeMode mode,
+            int mouseX,
+            int mouseY
+    ) {
+        boolean focusedDetail = body.width() < 470;
+        int toolbarHeight = focusedDetail ? 44 : 25;
+        Rect toolbar = new Rect(body.x(), body.y(), body.width(), toolbarHeight);
+        panel(graphics, toolbar);
 
+        String normalizedQuery = bookQuery.strip().toLowerCase(Locale.ROOT);
         List<LibrarianEnchantedBookReference> books = availableBooks(mode).stream()
                 .filter(book -> book.professionLevels().contains(bookProfessionLevel))
+                .filter(book -> normalizedQuery.isEmpty()
+                        || bookName(book).toLowerCase(Locale.ROOT).contains(normalizedQuery))
                 .toList();
-        Rect rows = new Rect(listPanel.x() + 3, listPanel.y() + 24, listPanel.width() - 6, listPanel.height() - 27);
-        int rowHeight = bookRowHeight(books, rows.width());
-        int visibleRows = Math.max(1, rows.height() / rowHeight);
-        bookScroll = clamp(bookScroll, 0, Math.max(0, books.size() - visibleRows));
+        if (selectedBook != null && !books.contains(selectedBook)) {
+            selectedBook = null;
+            possibleDetailScroll = 0;
+            possibleDetailScrollVisual = 0.0;
+        }
+
+        Rect back = new Rect(toolbar.x() + 5, toolbar.y() + 4, 42, 17);
+        drawSmallButton(graphics, back, "Back", false, mouseX, mouseY, () -> {
+            browsingBooks = false;
+            activeScrollbarDrag = null;
+            if (bookSearch != null) {
+                bookSearch.setFocused(false);
+            }
+        });
+        int searchWidth = focusedDetail ? toolbar.width() - 10 : Math.min(230, toolbar.width() / 2);
+        int searchX = focusedDetail ? toolbar.x() + 5 : toolbar.right() - searchWidth - 5;
+        Rect searchBounds = new Rect(searchX, focusedDetail ? toolbar.y() + 24 : toolbar.y() + 4,
+                Math.max(1, searchWidth), 17);
+        String heading = levelName(bookProfessionLevel) + " enchantments"
+                + (mode == LibrarianTradeMode.TRADE_REBALANCE ? " · Rebalanced" : "");
+        int titleRight = focusedDetail ? toolbar.right() - 5 : searchBounds.x() - 7;
+        drawFittedText(graphics, heading,
+                new Rect(back.right() + 6, toolbar.y() + 3, Math.max(1, titleRight - back.right() - 6), 19),
+                2, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+        configureBookSearch(graphics, searchBounds);
+
+        Rect browserBody = new Rect(body.x(), toolbar.bottom() + 4, body.width(),
+                Math.max(1, body.bottom() - toolbar.bottom() - 4));
+        if (focusedDetail && selectedBook != null) {
+            drawBookDetailPanel(graphics, browserBody, selectedBook, true, mouseX, mouseY);
+            return;
+        }
+
+        int listWidth = focusedDetail ? browserBody.width() : Math.max(300, browserBody.width() * 2 / 3);
+        listWidth = Math.min(browserBody.width(), listWidth);
+        Rect listPanel = new Rect(browserBody.x(), browserBody.y(), listWidth, browserBody.height());
+        panel(graphics, listPanel);
+        Rect detail = focusedDetail ? null : new Rect(listPanel.right() + 5, browserBody.y(),
+                Math.max(1, browserBody.right() - listPanel.right() - 5), browserBody.height());
+        if (detail != null) {
+            panel(graphics, detail);
+        }
+
+        drawFittedText(graphics, "Enchantment catalog · " + books.size(),
+                new Rect(listPanel.x() + 6, listPanel.y() + 3, listPanel.width() - 12, 14),
+                1, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+        Rect rows = new Rect(listPanel.x() + 3, listPanel.y() + 19,
+                listPanel.width() - 6, Math.max(1, listPanel.height() - 22));
+        drawBookGrid(graphics, rows, books, mouseX, mouseY);
+
+        if (detail == null) {
+            return;
+        }
+        if (selectedBook == null) {
+            Rect inner = inset(detail, 7);
+            ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
+            int iconX = inner.x() + Math.max(0, (inner.width() - 16) / 2);
+            drawIcon(graphics, icon, iconX, inner.y() + 6, mouseX, mouseY, false);
+            String message = books.isEmpty()
+                    ? normalizedQuery.isEmpty()
+                            ? "No enchanted books are available for this level and variant."
+                            : "No enchanted books match \u201c" + bookQuery.strip() + "\u201d."
+                    : "Select an enchantment to inspect its cost, level, and variant rules.";
+            drawFittedText(graphics, message,
+                    new Rect(inner.x(), inner.y() + 30, inner.width(), Math.max(1, inner.height() - 30)),
+                    8, MIN_TEXT_SCALE, TextAlignment.CENTER, false, palette.secondaryText());
+            return;
+        }
+        drawBookDetailContent(graphics, inset(detail, 5), selectedBook, mouseX, mouseY);
+    }
+
+    private void configureBookSearch(GuiGraphicsExtractor graphics, Rect bounds) {
+        boolean searchFocused = bookSearch != null && bookSearch.isFocused();
+        graphics.fill(bounds.x() + 1, bounds.y() + 2, bounds.right() + 1,
+                bounds.bottom() + 2, LibrarianScreenMotion.withAlpha(palette.shadow(), 0.45F));
+        graphics.fill(bounds.x(), bounds.y(), bounds.right(), bounds.bottom(), palette.slot());
+        graphics.outline(bounds.x(), bounds.y(), bounds.width(), bounds.height(),
+                searchFocused ? palette.selectedBorder() : palette.slotShadow());
+        if (bookSearch != null) {
+            bookSearch.visible = true;
+            // EditBox maintains derived text coordinates in its individual setters.
+            // Calling AbstractWidget#setRectangle bypasses those updates in 26.3.
+            bookSearch.setX(bounds.x() + 5);
+            bookSearch.setY(bounds.y() + 2);
+            bookSearch.setWidth(Math.max(1, bounds.width() - 10));
+            bookSearch.setHeight(Math.max(1, bounds.height() - 4));
+        }
+    }
+
+    private void drawBookGrid(
+            GuiGraphicsExtractor graphics,
+            Rect rows,
+            List<LibrarianEnchantedBookReference> books,
+            int mouseX,
+            int mouseY
+    ) {
+        int columns = rows.width() >= 270 ? 2 : 1;
+        bookGridColumns = columns;
+        int gap = 3;
+        int usableWidth = Math.max(1, rows.width() - 5);
+        int cellWidth = Math.max(1, (usableWidth - gap * (columns - 1)) / columns);
+        int rowHeight = Math.max(BOOK_ROW_HEIGHT, bookRowHeight(books, cellWidth));
+        int rowPitch = rowHeight + gap;
+        int totalRows = (books.size() + columns - 1) / columns;
+        int visibleRows = Math.max(1, (rows.height() + gap) / rowPitch);
+        int maxBookScroll = Math.max(0, totalRows - visibleRows);
+        bookScroll = clamp(bookScroll, 0, maxBookScroll);
+        bookScrollVisual = Math.max(0.0, Math.min(maxBookScroll, bookScrollVisual));
+        bookScrollVisual = animateScroll(ScrollRegion.BOOK_LIST, bookScrollVisual, bookScroll);
+        int firstRow = clamp((int)Math.floor(bookScrollVisual), 0, maxBookScroll);
+        int rowOffset = (int)Math.round((bookScrollVisual - firstRow) * rowPitch);
+
         graphics.enableScissor(rows.x(), rows.y(), rows.right(), rows.bottom());
         activeTooltipClip = rows;
-        for (int visible = 0; visible < visibleRows; visible++) {
-            int index = bookScroll + visible;
-            if (index >= books.size()) {
-                break;
-            }
-            LibrarianEnchantedBookReference book = books.get(index);
-            Rect row = new Rect(rows.x(), rows.y() + visible * rowHeight, rows.width(), rowHeight - 1);
-            Rect visibleRow = intersection(row, rows);
-            boolean selected = book.equals(selectedBook);
-            boolean hovered = visibleRow != null && visibleRow.contains(mouseX, mouseY);
-            graphics.fill(row.x(), row.y(), row.right(), row.bottom(),
-                    selected ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
-            ItemStack icon = book.iconStack();
-            drawIcon(graphics, icon, row.x() + 3, row.y() + (row.height() - 16) / 2, mouseX, mouseY, false);
-            drawFittedText(graphics, bookName(book),
-                    new Rect(row.x() + 23, row.y() + 2, Math.max(10, row.width() - 27), row.height() - 4),
-                    2, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.primaryText());
-            if (visibleRow != null) {
-                hitTargets.add(new HitTarget(visibleRow, () -> {
-                    selectedBook = book;
-                    possibleDetailScroll = 0;
-                }));
+        for (int visibleRow = 0; visibleRow <= visibleRows; visibleRow++) {
+            int gridRow = firstRow + visibleRow;
+            for (int column = 0; column < columns; column++) {
+                int index = gridRow * columns + column;
+                if (index >= books.size()) {
+                    break;
+                }
+                LibrarianEnchantedBookReference book = books.get(index);
+                Rect cell = new Rect(rows.x() + column * (cellWidth + gap),
+                        rows.y() + visibleRow * rowPitch - rowOffset, cellWidth, rowHeight);
+                Rect visibleCell = intersection(cell, rows);
+                boolean selected = book.equals(selectedBook);
+                boolean hovered = visibleCell != null && visibleCell.contains(mouseX, mouseY);
+                selectableSurface(graphics, cell, book, selected, hovered);
+                ItemStack icon = book.iconStack();
+                drawIcon(graphics, icon, cell.x() + 4, cell.y() + (cell.height() - 16) / 2,
+                        mouseX, mouseY, false);
+                drawFittedText(graphics, bookName(book),
+                        new Rect(cell.x() + 24, cell.y() + 2, Math.max(10, cell.width() - 28), cell.height() - 4),
+                        2, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.primaryText());
+                if (visibleCell != null) {
+                    hitTargets.add(new HitTarget(visibleCell, () -> {
+                        selectedBook = book;
+                        possibleDetailScroll = 0;
+                        possibleDetailScrollVisual = 0.0;
+                        motion.selectionChanged(System.nanoTime());
+                    }));
+                }
             }
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawScrollbar(graphics, rows, books.size(), visibleRows, bookScroll);
+        drawScrollbar(graphics, rows, totalRows, visibleRows, bookScrollVisual, ScrollRegion.BOOK_LIST);
+    }
 
-        if (selectedBook == null && !books.isEmpty()) {
-            selectedBook = books.getFirst();
+    private void drawBookDetailPanel(
+            GuiGraphicsExtractor graphics,
+            Rect panelBounds,
+            LibrarianEnchantedBookReference book,
+            boolean showResultsButton,
+            int mouseX,
+            int mouseY
+    ) {
+        panel(graphics, panelBounds);
+        int topInset = 5;
+        if (showResultsButton) {
+            Rect results = new Rect(panelBounds.x() + 5, panelBounds.y() + 4, 54, 17);
+            drawSmallButton(graphics, results, "Results", false, mouseX, mouseY, () -> {
+                selectedBook = null;
+                possibleDetailScroll = 0;
+                possibleDetailScrollVisual = 0.0;
+                activeScrollbarDrag = null;
+                motion.selectionChanged(System.nanoTime());
+            });
+            drawFittedText(graphics, bookName(book),
+                    new Rect(results.right() + 6, panelBounds.y() + 3,
+                            Math.max(1, panelBounds.right() - results.right() - 11), 19),
+                    2, MIN_TEXT_SCALE, TextAlignment.LEFT, true, palette.headingText());
+            topInset = 25;
         }
-        if (selectedBook == null) {
-            Rect inner = inset(detail, 6);
-            drawFittedText(graphics, "No enchanted books are available for this level and variant.",
-                    inner, 8, MIN_TEXT_SCALE, TextAlignment.LEFT, false, palette.secondaryText());
-            return;
-        }
-        LibrarianEnchantedBookReference book = selectedBook;
-        Rect viewport = inset(detail, 5);
+        Rect viewport = new Rect(panelBounds.x() + 5, panelBounds.y() + topInset,
+                Math.max(1, panelBounds.width() - 10), Math.max(1, panelBounds.height() - topInset - 5));
+        drawBookDetailContent(graphics, viewport, book, mouseX, mouseY);
+    }
+
+    private void drawBookDetailContent(
+            GuiGraphicsExtractor graphics,
+            Rect viewport,
+            LibrarianEnchantedBookReference book,
+            int mouseX,
+            int mouseY
+    ) {
         activeDetailBounds = viewport;
         int textWidth = Math.max(12, viewport.width() - 2);
         TextLayout titleLayout = planText(bookName(book), textWidth, 4, MIN_TEXT_SCALE);
@@ -966,10 +1287,16 @@ public final class LibrarianInfoScreen extends Screen {
                 + (variant.isEmpty() ? 0 : 3 + variant.height()) + 4;
         possibleDetailMaxScroll = Math.max(0, contentHeight - viewport.height());
         possibleDetailScroll = clamp(possibleDetailScroll, 0, possibleDetailMaxScroll);
+        possibleDetailScrollVisual = Math.max(0.0,
+                Math.min(possibleDetailMaxScroll, possibleDetailScrollVisual));
+        possibleDetailScrollVisual = animateScroll(
+                ScrollRegion.POSSIBLE_DETAIL, possibleDetailScrollVisual, possibleDetailScroll
+        );
+        int displayedDetailScroll = (int)Math.round(possibleDetailScrollVisual);
 
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
         activeTooltipClip = viewport;
-        int y = viewport.y() + 4 - possibleDetailScroll;
+        int y = viewport.y() + 4 - displayedDetailScroll;
         drawTextLayout(graphics, titleLayout, new Rect(viewport.x(), y, textWidth, titleLayout.height()),
                 TextAlignment.LEFT, false, palette.primaryText());
         y += titleLayout.height() + 3;
@@ -994,7 +1321,8 @@ public final class LibrarianInfoScreen extends Screen {
         }
         activeTooltipClip = null;
         graphics.disableScissor();
-        drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScroll);
+        drawPixelScrollbar(graphics, viewport, contentHeight, possibleDetailScrollVisual,
+                ScrollRegion.POSSIBLE_DETAIL);
     }
 
     private List<LibrarianEnchantedBookReference> availableBooks(LibrarianTradeMode mode) {
@@ -1021,7 +1349,9 @@ public final class LibrarianInfoScreen extends Screen {
             cachedOffers = snapshot == null ? new MerchantOffers() : snapshot.offersCopy();
             selectedCurrent = LibrarianMinimumPrice.enchantedBookOfferIndex(cachedOffers);
             currentScroll = selectedCurrent;
+            currentScrollVisual = selectedCurrent;
             currentDetailScroll = 0;
+            currentDetailScrollVisual = 0.0;
         }
     }
 
@@ -1413,6 +1743,10 @@ public final class LibrarianInfoScreen extends Screen {
         if (stack.isEmpty()) {
             return;
         }
+        graphics.fill(x - 1, y - 1, x + 17, y + 17, palette.slotShadow());
+        graphics.fill(x, y, x + 16, y + 16, palette.slot());
+        graphics.horizontalLine(x, x + 15, y, palette.innerBorder());
+        graphics.verticalLine(x, y, y + 15, palette.innerBorder());
         graphics.fakeItem(stack, x, y);
         graphics.itemDecorations(font, stack, x, y, showOne && stack.getCount() == 1 ? "1" : null);
         if ((activeTooltipClip == null || activeTooltipClip.contains(mouseX, mouseY))
@@ -1425,19 +1759,27 @@ public final class LibrarianInfoScreen extends Screen {
             GuiGraphicsExtractor graphics,
             Rect rect,
             String label,
-            boolean active,
+            net.minecraft.world.item.Item icon,
+            Tab target,
             int mouseX,
-            int mouseY,
-            Runnable action
+            int mouseY
     ) {
+        boolean active = tab == target;
         boolean hovered = rect.contains(mouseX, mouseY);
-        graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(),
-                active ? palette.selected() : hovered ? palette.hovered() : palette.panel());
+        float hover = motion.hover(target, hovered && !active);
+        int base = active ? palette.panel() : palette.headerBottom();
+        int fill = LibrarianScreenMotion.mix(base, active ? palette.selected() : palette.hovered(), hover);
+        graphics.fillGradient(rect.x(), rect.y(), rect.right(), rect.bottom(),
+                LibrarianScreenMotion.mix(fill, palette.innerBorder(), active ? 0.16F : 0.04F), fill);
         graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(),
                 active ? palette.selectedBorder() : palette.border());
-        drawFittedText(graphics, label, inset(rect, 1),
-                2, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.primaryText());
-        hitTargets.add(new HitTarget(rect, action));
+        int iconY = rect.y() + (rect.height() - 16) / 2;
+        graphics.fakeItem(new ItemStack(icon), rect.x() + 5, iconY);
+        drawFittedText(graphics, label,
+                new Rect(rect.x() + 24, rect.y() + 1, Math.max(1, rect.width() - 27), rect.height() - 2),
+                2, MIN_TEXT_SCALE, TextAlignment.CENTER, true,
+                active ? palette.primaryText() : palette.headerText());
+        hitTargets.add(new HitTarget(rect, () -> switchTab(target)));
     }
 
     private void drawSmallButton(
@@ -1450,10 +1792,17 @@ public final class LibrarianInfoScreen extends Screen {
             Runnable action
     ) {
         boolean hovered = rect.contains(mouseX, mouseY);
-        graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(),
-                active ? palette.selected() : hovered ? palette.hovered() : palette.clickableBox());
+        float hover = motion.hover(label, hovered && !active);
+        int fill = LibrarianScreenMotion.mix(active ? palette.selected() : palette.clickableBox(),
+                palette.hovered(), hover);
+        graphics.fill(rect.x() + 1, rect.y() + 2, rect.right() + 1, rect.bottom() + 2,
+                LibrarianScreenMotion.withAlpha(palette.shadow(), 0.58F));
+        graphics.fillGradient(rect.x(), rect.y(), rect.right(), rect.bottom(),
+                LibrarianScreenMotion.mix(fill, palette.innerBorder(), 0.12F), fill);
         graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(),
                 active ? palette.selectedBorder() : palette.border());
+        graphics.horizontalLine(rect.x() + 2, rect.right() - 3, rect.y() + 1,
+                active ? palette.accentBright() : palette.innerBorder());
         drawFittedText(graphics, label, inset(rect, 2),
                 2, MIN_TEXT_SCALE, TextAlignment.CENTER, true, palette.primaryText());
         Rect hitbox = activeClickClip == null ? rect : intersection(rect, activeClickClip);
@@ -1462,34 +1811,106 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private void panel(GuiGraphicsExtractor graphics, Rect rect) {
-        graphics.fill(rect.x(), rect.y(), rect.right(), rect.bottom(), palette.panel());
+    private void drawCloseButton(GuiGraphicsExtractor graphics, Rect rect, int mouseX, int mouseY) {
+        boolean hovered = rect.contains(mouseX, mouseY);
+        float hover = motion.hover(CLOSE_BUTTON_MOTION_KEY, hovered);
+        int fill = LibrarianScreenMotion.mix(palette.clickableBox(), palette.hovered(), hover);
+        graphics.fill(rect.x() + 1, rect.y() + 2, rect.right() + 1, rect.bottom() + 2,
+                LibrarianScreenMotion.withAlpha(palette.shadow(), 0.58F));
+        graphics.fillGradient(rect.x(), rect.y(), rect.right(), rect.bottom(),
+                LibrarianScreenMotion.mix(fill, palette.innerBorder(), 0.12F), fill);
         graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(), palette.border());
+        graphics.horizontalLine(rect.x() + 2, rect.right() - 3, rect.y() + 1, palette.innerBorder());
+
+        String glyph = "\u00D7";
+        // The Minecraft multiplication glyph sits optically high and left in its
+        // advance box. These corrections center the visible strokes, not the box.
+        int glyphX = rect.x() + (rect.width() - font.width(glyph)) / 2 + 1;
+        int glyphY = rect.y() + (rect.height() - font.lineHeight) / 2 + 2;
+        graphics.text(font, glyph, glyphX, glyphY, palette.primaryText(), false);
+        hitTargets.add(new HitTarget(rect, this::onClose));
     }
 
-    private void drawScrollbar(GuiGraphicsExtractor graphics, Rect area, int total, int visible, int first) {
-        if (total <= visible || visible <= 0) {
-            return;
+    private void panel(GuiGraphicsExtractor graphics, Rect rect) {
+        graphics.fill(rect.x() + 2, rect.y() + 3, rect.right() + 2, rect.bottom() + 3,
+                LibrarianScreenMotion.withAlpha(palette.shadow(), 0.48F));
+        graphics.fillGradient(rect.x(), rect.y(), rect.right(), rect.bottom(), palette.panel(), palette.panelShade());
+        graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(), palette.border());
+        if (rect.width() > 4 && rect.height() > 4) {
+            graphics.horizontalLine(rect.x() + 2, rect.right() - 3, rect.y() + 1, palette.innerBorder());
+            graphics.verticalLine(rect.x() + 1, rect.y() + 2, rect.bottom() - 3, palette.innerBorder());
         }
-        int trackX = area.right() - 3;
-        graphics.fill(trackX, area.y(), trackX + 2, area.bottom(), palette.scrollbarTrack());
-        int thumbHeight = Math.max(10, area.height() * visible / total);
-        int travel = area.height() - thumbHeight;
-        int thumbY = area.y() + travel * first / Math.max(1, total - visible);
-        graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, palette.scrollbarThumb());
+        graphics.fill(rect.x() + 2, rect.y() + 2, rect.x() + 4, rect.y() + 4, palette.accent());
     }
 
-    private void drawPixelScrollbar(GuiGraphicsExtractor graphics, Rect area, int contentHeight, int scroll) {
-        if (contentHeight <= area.height() || area.height() <= 0) {
+    private void selectableSurface(
+            GuiGraphicsExtractor graphics,
+            Rect rect,
+            Object key,
+            boolean selected,
+            boolean hovered
+    ) {
+        float hover = motion.hover(key, hovered && !selected);
+        int fill = LibrarianScreenMotion.mix(selected ? palette.selected() : palette.clickableBox(),
+                palette.hovered(), hover);
+        if (selected) {
+            fill = LibrarianScreenMotion.mix(fill, palette.accentBright(), motion.selectionPulse(frameTime) * 0.10F);
+        }
+        graphics.fillGradient(rect.x(), rect.y(), rect.right(), rect.bottom(),
+                LibrarianScreenMotion.mix(fill, palette.innerBorder(), 0.08F), fill);
+        graphics.outline(rect.x(), rect.y(), rect.width(), rect.height(),
+                selected ? palette.selectedBorder() : LibrarianScreenMotion.mix(palette.separator(),
+                        palette.selectedBorder(), hover));
+        if (selected) {
+            graphics.fill(rect.x(), rect.y() + 2, rect.x() + 3, rect.bottom() - 2, palette.accentBright());
+        } else if (hover > 0.02F) {
+            graphics.fill(rect.x(), rect.y() + 2, rect.x() + 2, rect.bottom() - 2,
+                    LibrarianScreenMotion.withAlpha(palette.accent(), hover));
+        }
+    }
+
+    private void drawScrollbar(
+            GuiGraphicsExtractor graphics,
+            Rect area,
+            int total,
+            int visible,
+            double first,
+            ScrollRegion region
+    ) {
+        LibrarianScrollbar.Geometry geometry = LibrarianScrollbar.rows(
+                area.right() - 4, area.y(), area.height(), total, visible, first
+        );
+        drawScrollbar(graphics, geometry, region);
+    }
+
+    private void drawPixelScrollbar(
+            GuiGraphicsExtractor graphics,
+            Rect area,
+            int contentHeight,
+            double scroll,
+            ScrollRegion region
+    ) {
+        LibrarianScrollbar.Geometry geometry = LibrarianScrollbar.pixels(
+                area.right() - 3, area.y(), area.height(), contentHeight, scroll
+        );
+        drawScrollbar(graphics, geometry, region);
+    }
+
+    private void drawScrollbar(
+            GuiGraphicsExtractor graphics,
+            LibrarianScrollbar.@Nullable Geometry geometry,
+            ScrollRegion region
+    ) {
+        if (geometry == null) {
             return;
         }
-        int trackX = area.right() - 2;
-        graphics.fill(trackX, area.y(), trackX + 2, area.bottom(), palette.scrollbarTrack());
-        int thumbHeight = Math.max(10, area.height() * area.height() / contentHeight);
-        int travel = area.height() - thumbHeight;
-        int maxScroll = contentHeight - area.height();
-        int thumbY = area.y() + travel * clamp(scroll, 0, maxScroll) / Math.max(1, maxScroll);
-        graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, palette.scrollbarThumb());
+        boolean dragging = activeScrollbarDrag != null && activeScrollbarDrag.region() == region;
+        int thumb = dragging ? palette.selectedBorder() : palette.scrollbarThumb();
+        graphics.fill(geometry.x(), geometry.y(), geometry.right(), geometry.bottom(), palette.scrollbarTrack());
+        graphics.fill(geometry.x(), geometry.thumbY(), geometry.right(), geometry.thumbBottom(), thumb);
+        graphics.fill(geometry.x() + 1, geometry.thumbY() + 1, geometry.right(), geometry.thumbBottom() - 1,
+                palette.accentBright());
+        scrollbarTargets.add(new ScrollbarTarget(region, geometry));
     }
 
     private TextLayout planText(String text, int width, int maxLines, float minimumScale) {
@@ -1564,38 +1985,127 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private void switchTab(Tab newTab) {
+        if (tab == newTab) {
+            return;
+        }
+        activeScrollbarDrag = null;
+        previousTab = tab;
         tab = newTab;
         browsingBooks = false;
+        if (bookSearch != null) {
+            bookSearch.setFocused(false);
+        }
         currentDetailScroll = 0;
+        currentDetailScrollVisual = 0.0;
         possibleDetailScroll = 0;
+        possibleDetailScrollVisual = 0.0;
+        motion.tabChanged(System.nanoTime());
         if (newTab == Tab.STATUS) {
             requestStatusSnapshot(false);
         }
     }
 
     private void selectLevel(int level) {
+        activeScrollbarDrag = null;
         selectedProfessionLevel = level;
         selectedPossible = null;
         selectedBook = null;
         browsingBooks = false;
         possibleGridScroll = 0;
+        possibleGridScrollVisual = 0.0;
         possibleDetailScroll = 0;
+        possibleDetailScrollVisual = 0.0;
+        if (bookSearch != null) {
+            bookSearch.setFocused(false);
+        }
+        motion.selectionChanged(System.nanoTime());
     }
 
     private void selectPossible(LibrarianTradeReference trade) {
+        activeScrollbarDrag = null;
         selectedPossible = trade;
         possibleDetailScroll = 0;
+        possibleDetailScrollVisual = 0.0;
+        motion.selectionChanged(System.nanoTime());
         if (trade.enchantedBookSelector()) {
             browsingBooks = true;
             bookProfessionLevel = trade.professionLevel();
             selectedBook = null;
             bookScroll = 0;
+            bookScrollVisual = 0.0;
+        }
+    }
+
+    private @Nullable ScrollbarTarget scrollbarAt(double mouseX, double mouseY) {
+        for (int index = scrollbarTargets.size() - 1; index >= 0; index--) {
+            ScrollbarTarget target = scrollbarTargets.get(index);
+            if (target.geometry().containsThumb(mouseX, mouseY)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private @Nullable ScrollbarTarget scrollbarFor(ScrollRegion region) {
+        for (int index = scrollbarTargets.size() - 1; index >= 0; index--) {
+            ScrollbarTarget target = scrollbarTargets.get(index);
+            if (target.region() == region) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private double animateScroll(ScrollRegion region, double displayed, double target) {
+        return activeScrollbarDrag != null && activeScrollbarDrag.region() == region
+                ? displayed
+                : motion.scroll(displayed, target);
+    }
+
+    private void setScrollFromDrag(ScrollRegion region, double value) {
+        int target = (int)Math.round(value);
+        switch (region) {
+            case CURRENT_LIST -> {
+                currentScroll = target;
+                currentScrollVisual = value;
+            }
+            case CURRENT_DETAIL -> {
+                currentDetailScroll = target;
+                currentDetailScrollVisual = value;
+            }
+            case POSSIBLE_GRID -> {
+                possibleGridScroll = target;
+                possibleGridScrollVisual = value;
+            }
+            case POSSIBLE_DETAIL -> {
+                possibleDetailScroll = target;
+                possibleDetailScrollVisual = value;
+            }
+            case BOOK_LIST -> {
+                bookScroll = target;
+                bookScrollVisual = value;
+            }
+            case STATUS_DASHBOARD -> {
+                statusScroll = target;
+                statusScrollVisual = value;
+            }
+            case STATUS_DETAIL -> {
+                statusDetailScroll = target;
+                statusDetailScrollVisual = value;
+            }
         }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            ScrollbarTarget scrollbar = scrollbarAt(event.x(), event.y());
+            if (scrollbar != null) {
+                activeScrollbarDrag = new ScrollbarDrag(
+                        scrollbar.region(), event.y() - scrollbar.geometry().thumbY()
+                );
+                return true;
+            }
             for (HitTarget target : List.copyOf(hitTargets)) {
                 if (target.bounds().contains(event.x(), event.y())) {
                     target.action().run();
@@ -1604,6 +2114,30 @@ public final class LibrarianInfoScreen extends Screen {
             }
         }
         return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (activeScrollbarDrag != null && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            ScrollbarTarget target = scrollbarFor(activeScrollbarDrag.region());
+            if (target == null) {
+                activeScrollbarDrag = null;
+                return true;
+            }
+            double value = target.geometry().valueForPointer(event.y(), activeScrollbarDrag.grabOffset());
+            setScrollFromDrag(target.region(), value);
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (activeScrollbarDrag != null && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            activeScrollbarDrag = null;
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     @Override
@@ -1638,7 +2172,7 @@ public final class LibrarianInfoScreen extends Screen {
             return true;
         }
         if (browsingBooks) {
-            bookScroll = Math.max(0, bookScroll + direction * 2);
+            bookScroll = Math.max(0, bookScroll + direction * (bookGridColumns > 1 ? 1 : 2));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -1656,6 +2190,7 @@ public final class LibrarianInfoScreen extends Screen {
 
     @Override
     public void removed() {
+        activeScrollbarDrag = null;
         statusRequestGeneration++;
         statusRequestInFlight = false;
         super.removed();
@@ -1668,11 +2203,11 @@ public final class LibrarianInfoScreen extends Screen {
     }
 
     private Layout layout() {
-        int panelWidth = Math.min(480, Math.max(300, width - 20));
-        int panelHeight = Math.min(286, Math.max(190, height - 20));
-        panelWidth = Math.max(1, Math.min(panelWidth, Math.max(1, width - 4)));
-        panelHeight = Math.max(1, Math.min(panelHeight, Math.max(1, height - 4)));
-        return new Layout((width - panelWidth) / 2, (height - panelHeight) / 2, panelWidth, panelHeight);
+        LibrarianScreenLayout.Spec spec = layoutSpec == null
+                ? LibrarianScreenLayout.resolve(width, height, 0)
+                : layoutSpec;
+        return new Layout(spec.x(), spec.y(), spec.width(), spec.height(),
+                spec.headerHeight(), spec.footerHeight(), spec.compact());
     }
 
     private static Rect inset(Rect rect, int amount) {
@@ -1733,6 +2268,17 @@ public final class LibrarianInfoScreen extends Screen {
             case 4 -> "Expert";
             case 5 -> "Master";
             default -> "Level " + level;
+        };
+    }
+
+    private static String levelButtonName(int level, int availableWidth) {
+        if (availableWidth >= 390) {
+            return levelName(level);
+        }
+        return switch (level) {
+            case 2 -> "Apprent.";
+            case 3 -> "Journey.";
+            default -> levelName(level);
         };
     }
 
@@ -1812,7 +2358,15 @@ public final class LibrarianInfoScreen extends Screen {
         }
     }
 
-    private record Layout(int x, int y, int width, int height) {
+    private record Layout(
+            int x,
+            int y,
+            int width,
+            int height,
+            int headerHeight,
+            int footerHeight,
+            boolean compact
+    ) {
         int right() {
             return x + width;
         }
@@ -1820,6 +2374,26 @@ public final class LibrarianInfoScreen extends Screen {
         int bottom() {
             return y + height;
         }
+
+        int contentHeight() {
+            return Math.max(1, height - headerHeight - footerHeight);
+        }
+    }
+
+    private enum ScrollRegion {
+        CURRENT_LIST,
+        CURRENT_DETAIL,
+        POSSIBLE_GRID,
+        POSSIBLE_DETAIL,
+        BOOK_LIST,
+        STATUS_DASHBOARD,
+        STATUS_DETAIL
+    }
+
+    private record ScrollbarTarget(ScrollRegion region, LibrarianScrollbar.Geometry geometry) {
+    }
+
+    private record ScrollbarDrag(ScrollRegion region, double grabOffset) {
     }
 
     private record HitTarget(Rect bounds, Runnable action) {

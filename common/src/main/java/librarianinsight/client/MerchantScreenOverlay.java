@@ -33,12 +33,8 @@ public final class MerchantScreenOverlay {
     private static final int VANILLA_SCREEN_WIDTH = 276;
     private static final int VANILLA_SCREEN_HEIGHT = 166;
     private static final int PANEL_WIDTH = 236;
-    private static final int PANEL_HEIGHT = 36;
+    private static final int PANEL_HEIGHT = 56;
     private static final int CONTEXT_LIFETIME_TICKS = 12;
-    private static final int PANEL_BACKGROUND = 0xE0101010;
-    private static final int PANEL_BORDER = 0xFFA0A0A0;
-    private static final int TEXT_COLOR = 0xFFFFFFFF;
-    private static final int MUTED_TEXT_COLOR = 0xFFB0B0B0;
 
     private static PendingContext pendingContext;
     private static final Map<MerchantScreen, OverlayState> ACTIVE_SCREENS = new WeakHashMap<>();
@@ -127,33 +123,56 @@ public final class MerchantScreenOverlay {
             return;
         }
         PanelPosition panel = panelPosition.get();
-        graphics.fill(panel.x(), panel.y(), panel.x() + PANEL_WIDTH, panel.y() + PANEL_HEIGHT, PANEL_BACKGROUND);
-        graphics.outline(panel.x(), panel.y(), PANEL_WIDTH, PANEL_HEIGHT, PANEL_BORDER);
+        LibrarianMenuPalette palette = LibrarianMenuPalette.forTheme(
+                librarianinsight.LibrarianInsight.priceDisplay.getMenuTheme());
+        drawPanel(graphics, panel, palette);
 
         Font font = Minecraft.getInstance().font;
-        int currentY = panel.y() + 1;
-        int minimumY = panel.y() + 18;
-        graphics.text(font, "Current:", panel.x() + 5, currentY + 4, TEXT_COLOR, false);
+        graphics.fakeItem(new ItemStack(net.minecraft.world.item.Items.ENCHANTED_BOOK), panel.x() + 5, panel.y() + 1);
+        graphics.text(font, "Librarian Insight", panel.x() + 27, panel.y() + 5, palette.headerText(), false);
+
+        int currentY = panel.y() + 19;
+        int minimumY = panel.y() + 37;
+        graphics.text(font, "Current cost", panel.x() + 7, currentY + 4, palette.primaryText(), false);
         LibrarianMinimumPrice.CurrentCost current = LibrarianMinimumPrice.currentCost(offer);
         extractCosts(
                 graphics,
                 font,
                 current.first(),
                 current.second().orElse(ItemStack.EMPTY),
-                panel.x() + 94,
+                panel.x() + 104,
                 currentY,
                 mouseX,
-                mouseY
+                mouseY,
+                palette
         );
 
-        graphics.text(font, "Minimum:", panel.x() + 5, minimumY + 4, TEXT_COLOR, false);
+        graphics.text(font, "Natural minimum", panel.x() + 7, minimumY + 4, palette.primaryText(), false);
         Optional<MinimumCosts> minimum = overlayState.minimumFor(offer);
         if (minimum.isPresent()) {
             MinimumCosts costs = minimum.get();
-            extractCosts(graphics, font, costs.first(), costs.second(), panel.x() + 94, minimumY, mouseX, mouseY);
+            extractCosts(graphics, font, costs.first(), costs.second(), panel.x() + 104, minimumY,
+                    mouseX, mouseY, palette);
         } else {
-            graphics.text(font, "unavailable", panel.x() + 94, minimumY + 4, MUTED_TEXT_COLOR, false);
+            graphics.text(font, "unavailable", panel.x() + 104, minimumY + 4, palette.secondaryText(), false);
         }
+    }
+
+    private static void drawPanel(
+            GuiGraphicsExtractor graphics,
+            PanelPosition panel,
+            LibrarianMenuPalette palette
+    ) {
+        graphics.fill(panel.x() + 3, panel.y() + 4, panel.x() + PANEL_WIDTH + 3,
+                panel.y() + PANEL_HEIGHT + 4, palette.shadow());
+        graphics.fillGradient(panel.x(), panel.y(), panel.x() + PANEL_WIDTH, panel.y() + PANEL_HEIGHT,
+                palette.panel(), palette.panelShade());
+        graphics.fillGradient(panel.x() + 1, panel.y() + 1, panel.x() + PANEL_WIDTH - 1, panel.y() + 18,
+                palette.headerTop(), palette.headerBottom());
+        graphics.outline(panel.x(), panel.y(), PANEL_WIDTH, PANEL_HEIGHT, palette.border());
+        graphics.outline(panel.x() + 1, panel.y() + 1, PANEL_WIDTH - 2, PANEL_HEIGHT - 2, palette.innerBorder());
+        graphics.horizontalLine(panel.x() + 4, panel.x() + PANEL_WIDTH - 5, panel.y() + 18, palette.accent());
+        graphics.horizontalLine(panel.x() + 6, panel.x() + PANEL_WIDTH - 7, panel.y() + 36, palette.separator());
     }
 
     private static void extractCosts(
@@ -164,11 +183,13 @@ public final class MerchantScreenOverlay {
             int x,
             int y,
             int mouseX,
-            int mouseY
+            int mouseY,
+            LibrarianMenuPalette palette
     ) {
-        extractCost(graphics, font, first, x, y, mouseX, mouseY);
+        extractCost(graphics, font, first, x, y, mouseX, mouseY, palette);
         if (!second.isEmpty()) {
-            extractCost(graphics, font, second, x + 31, y, mouseX, mouseY);
+            graphics.text(font, "+", x + 21, y + 4, palette.primaryText(), false);
+            extractCost(graphics, font, second, x + 32, y, mouseX, mouseY, palette);
         }
     }
 
@@ -179,11 +200,14 @@ public final class MerchantScreenOverlay {
             int x,
             int y,
             int mouseX,
-            int mouseY
+            int mouseY,
+            LibrarianMenuPalette palette
     ) {
         if (stack.isEmpty()) {
             return;
         }
+        graphics.fill(x - 1, y - 1, x + 17, y + 17, palette.slotShadow());
+        graphics.fill(x, y, x + 16, y + 16, palette.slot());
         graphics.fakeItem(stack, x, y);
         graphics.itemDecorations(font, stack, x, y, stack.getCount() == 1 ? "1" : null);
         if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
