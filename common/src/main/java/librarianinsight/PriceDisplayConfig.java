@@ -18,7 +18,7 @@ public final class PriceDisplayConfig {
     private final Path path;
     private boolean enabled = true;
     private LecternTextColor textColor = LecternTextColor.BLACK;
-    private LibrarianMenuTheme menuTheme = LibrarianMenuTheme.LIGHT;
+    private LibrarianMenuTheme menuTheme = LibrarianMenuTheme.DARK;
 
     public static PriceDisplayConfig inDirectory(Path configDirectory) {
         return new PriceDisplayConfig(
@@ -98,7 +98,7 @@ public final class PriceDisplayConfig {
             textColor = LecternTextColor.parse(properties.getProperty(TEXT_COLOR_KEY))
                     .orElse(LecternTextColor.BLACK);
             menuTheme = LibrarianMenuTheme.parse(properties.getProperty(MENU_THEME_KEY))
-                    .orElse(LibrarianMenuTheme.LIGHT);
+                    .orElse(LibrarianMenuTheme.DARK);
             return true;
         } catch (IOException exception) {
             LibrarianInsight.LOGGER.warn(

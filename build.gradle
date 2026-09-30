@@ -8,16 +8,20 @@ plugins {
 }
 
 idea.project.settings.runConfigurations {
+    'Minecraft Client - Quilt 26.3'(org.jetbrains.gradle.ext.Gradle) {
+        setProject(rootProject.project(':quilt'))
+        taskNames = [':quilt:runClient']
+    }
     'Minecraft Client - Forge 26.3'(org.jetbrains.gradle.ext.Gradle) {
         setProject(rootProject.project(':forge'))
         taskNames = [':forge:runClient']
     }
 }
 
-tasks.named('build') { dependsOn ':fabric:build', ':neoforge:build', ':forge:build' }
-tasks.named('assemble') { dependsOn ':fabric:assemble', ':neoforge:assemble', ':forge:assemble' }
-tasks.named('check') { dependsOn ':fabric:check', ':neoforge:check', ':forge:check' }
+tasks.named('build') { dependsOn ':fabric:build', ':quilt:build', ':neoforge:build', ':forge:build' }
+tasks.named('assemble') { dependsOn ':fabric:assemble', ':quilt:assemble', ':neoforge:assemble', ':forge:assemble' }
+tasks.named('check') { dependsOn ':fabric:check', ':quilt:check', ':neoforge:check', ':forge:check' }
 tasks.register('test') {
     group = 'verification'
-    dependsOn ':fabric:test', ':neoforge:test', ':forge:test'
+    dependsOn ':fabric:test', ':quilt:test', ':neoforge:test', ':forge:test'
 }

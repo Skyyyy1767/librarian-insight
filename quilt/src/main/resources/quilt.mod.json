@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "quilt_loader": {
+    "group": "${group}",
+    "id": "librarian_insight",
+    "version": "${version}",
+    "metadata": {
+      "name": "Librarian Insight",
+      "description": "Displays nearby librarian enchanted-book trades on lecterns and provides detailed librarian insight without changing gameplay.",
+      "contributors": {
+        "Librarian Insight contributors": "Development",
+        "Saphjyr": "Original Visible Librarian Trades author"
+      },
+      "license": "MIT",
+      "icon": "assets/librarian_insight/icon.png"
+    },
+    "intermediate_mappings": "net.fabricmc:intermediary",
+    "entrypoints": {
+      "client": "librarianinsight.quilt.LibrarianInsightQuilt"
+    },
+    "depends": [
+      {
+        "id": "quilt_loader",
+        "versions": ">=${quilt_loader_version}"
+      },
+      {
+        "id": "minecraft",
+        "versions": "=${minecraft_version}"
+      },
+      {
+        "id": "java",
+        "versions": ">=25"
+      },
+      {
+        "id": "fabric-api",
+        "versions": ">=${fabric_api_version}"
+      }
+    ]
+  },
+  "mixin": {
+    "config": "librarian_insight.mixins.json",
+    "environment": "client"
+  },
+  "minecraft": {
+    "environment": "client"
+  }
+}
