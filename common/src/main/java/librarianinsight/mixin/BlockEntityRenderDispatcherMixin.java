@@ -3,6 +3,7 @@ package librarianinsight.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.math.Axis;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -16,7 +17,6 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
-import net.minecraft.client.resources.model.geometry.ItemQuads;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -69,10 +69,10 @@ public class BlockEntityRenderDispatcherMixin {
         // 26.3 stores FACING.getClockWise().toYRot(), which is 90 degrees
         // ahead of the original FACING.asRotation() value.
         poseStack.translate(0.5F, 0.5F, 0.5F);
-        poseStack.rotateDegrees(Axis.YP, 90.0F - lecternState.yRot);
+        poseStack.mulPose(Axis.YP.rotationDegrees(90.0F - lecternState.yRot));
         poseStack.translate(0.0F, 0.40F, 0.350F);
         poseStack.scale(0.010416667F, -0.010416667F, 0.010416667F);
-        poseStack.rotateDegrees(Axis.XP, 67.5F);
+        poseStack.mulPose(Axis.XP.rotationDegrees(67.5F));
         boolean hasPrice = LibrarianInsight.priceDisplay.isEnabled() && display.emeraldCost() > 0;
         int rowCount = layout.lines().length + (hasPrice ? 1 : 0);
         float firstY = NAME_CENTER_Y - ((rowCount - 1) * LINE_SPACING) / 2.0F;
@@ -195,10 +195,10 @@ public class BlockEntityRenderDispatcherMixin {
                 int overlayCoords,
                 int outlineColor,
                 int[] tintLayers,
-                ItemQuads quads,
+                List<BakedQuad> quads,
                 FoilType foilType
         ) {
-            for (BakedQuad quad : quads.all()) {
+            for (BakedQuad quad : quads) {
                 QuadInstance instance = new QuadInstance();
                 instance.setColor(colorFor(quad, tintLayers));
                 instance.setLightCoords(LightCoordsUtil.FULL_BRIGHT);

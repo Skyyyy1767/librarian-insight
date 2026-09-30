@@ -1,4 +1,4 @@
-# Librarian Insight — Minecraft 26.3
+# Librarian Insight — Minecraft 26.2
 
 Librarian Insight displays nearby librarian enchanted-book trades on lecterns and provides detailed librarian information without changing trades, RNG, items, villagers, or lecterns.
 
@@ -13,12 +13,12 @@ The full command name and short alias expose the same settings:
 - `/librarianinsight theme [light|dark]`
 - `/li theme [light|dark]`
 
-Client settings are stored in `config/librarian-insight.properties`. If that file is absent, settings from the previous `config/visible-librarian-trades.properties` filename are imported automatically. The legacy file is retained.
+Client settings are stored in `config/librarian-insight.properties`. Fresh configurations default to the dark menu theme. If that file is absent, settings from the previous `config/visible-librarian-trades.properties` filename are imported automatically; explicit saved light or dark preferences are preserved. The legacy file is retained.
 
 ## Librarian interface
 
 Right-click an empty lectern to open the Librarian Insight reference screen. The
-26.3 interface presents known unlocked offers, the complete possible-trade catalog,
+26.2 interface presents known unlocked offers, the complete possible-trade catalog,
 and live librarian status in three immediately accessible tabs. The dedicated
 enchanted-book browser uses a two-column catalog on suitable windows, a focused
 results/detail flow on compact windows, prominent search, smooth mouse-wheel
@@ -36,15 +36,16 @@ remains read-only; it only explains existing trade and villager state.
 ## Loaders and builds
 
 Install the JAR for your loader on the client. The mod ID remains `librarian_insight`
-and the mod version is `1.2+mc26.3`. No server installation is required.
+and the mod version is `1.1+mc26.2`. No server installation is required.
 
 | Component | Version |
 | --- | --- |
-| Minecraft | 26.3 |
-| Fabric Loader | 0.19.5 or newer |
-| Fabric API | 0.160.7+26.3 or newer compatible release (Fabric only) |
-| NeoForge | 26.3.0.6-beta or newer compatible 26.3 release |
-| Forge | 66.0.2 or newer compatible 26.3 release |
+| Minecraft | 26.2 |
+| Fabric Loader | 0.19.3 or newer |
+| Fabric API | 0.158.0+26.2 or newer compatible release (Fabric and Quilt) |
+| Quilt Loader | 0.31.0-beta.4 or newer compatible release |
+| NeoForge | 26.2.0.87 or newer compatible 26.2 release |
+| Forge | 65.1.3 or newer compatible 26.2 release |
 | Fabric Loom | 1.17.21 |
 | NeoForge ModDevGradle | 2.0.147 |
 | ForgeGradle | 7.0.40 |
@@ -52,7 +53,7 @@ and the mod version is `1.2+mc26.3`. No server installation is required.
 | Java toolchains / bytecode | JDK 25, JDK 21 for NeoForge test assets, and auxiliary JDK 8 for ForgeGradle's launcher / Java 25 |
 | JUnit | 5.12.2 (tests only) |
 
-Minecraft 26.3 supplies unobfuscated names, so none of the loaders need Yarn,
+Minecraft 26.2 supplies unobfuscated names, so none of the loaders need Yarn,
 Parchment, remapping, or an Architectury runtime dependency.
 
 With JDK 25 configured in `JAVA_HOME` and JDK 21 installed where Gradle can detect
@@ -60,12 +61,14 @@ it, run these commands from the repository root (use `gradlew.bat` instead of
 `./gradlew` on Windows):
 
 ```sh
-./gradlew build                 # all three loaders, tests, and JAR verification
+./gradlew build                 # all four loaders, tests, and JAR verification
 ./gradlew :fabric:build         # independently build Fabric
+./gradlew :quilt:build          # independently build Quilt
 ./gradlew :neoforge:build       # independently build NeoForge
 ./gradlew :forge:build          # independently build Forge
 ./gradlew test                  # shared test suite in all loader classpaths
 ./gradlew :fabric:runClient
+./gradlew :quilt:runClient
 ./gradlew :neoforge:runClient
 ./gradlew :forge:runClient
 ```
@@ -80,7 +83,7 @@ the `org.gradle.java.installations.fromEnv` setting lets Gradle use their versio
 toolchain; the Foojay resolver downloads it automatically. Mod compilation and every
 Minecraft client still use Java 25.
 Reimport the root Gradle project in IntelliJ after changing modules. Client runs
-use separate `fabric/run`, `neoforge/run`, and `forge/run` directories; the old
+use separate `fabric/run`, `quilt/run`, `neoforge/run`, and `forge/run` directories; the old
 root `run` folder is retained and is not migrated automatically.
 
 ModDevGradle generates the NeoForge IntelliJ launch argument files during Gradle
@@ -90,14 +93,15 @@ project synchronization. A standalone `clean` removes them with the rest of
 
 Distributable JARs:
 
-- `fabric/build/libs/librarian-insight-fabric-1.2+mc26.3.jar`
-- `neoforge/build/libs/librarian-insight-neoforge-1.2+mc26.3.jar`
-- `forge/build/libs/librarian-insight-forge-1.2+mc26.3.jar`
+- `fabric/build/libs/librarian-insight-fabric-1.1+mc26.2.jar`
+- `quilt/build/libs/librarian-insight-quilt-1.1+mc26.2.jar`
+- `neoforge/build/libs/librarian-insight-neoforge-1.1+mc26.2.jar`
+- `forge/build/libs/librarian-insight-forge-1.1+mc26.2.jar`
 
 The corresponding `-sources.jar` files are for development. `verifyDistribution`
 runs with each loader's `check`/`build` task and checks metadata, Java 25 bytecode,
 shared resources/classes, and absence of foreign loader references or embedded JARs.
-CI builds all three loaders and uploads all three sets of artifacts.
+CI builds all four loaders and uploads all four sets of artifacts.
 
 ## Project architecture
 
@@ -107,6 +111,10 @@ CI builds all three loaders and uploads all three sets of artifacts.
   and the shared tests. It has no loader imports and produces no runtime JAR.
 - `fabric`: Fabric entrypoint, callbacks, config-directory lookup, command feedback,
   and `fabric.mod.json`.
+- `fabric-quilt`: source-only Fabric API event adapter shared by the Fabric and Quilt
+  entrypoints.
+- `quilt`: Quilt entrypoint, Quilt config-directory lookup, `quilt.mod.json`, and a
+  Quilt Loader client run using Fabric API for current Minecraft versions.
 - `neoforge`: client-scoped NeoForge entrypoint, event adapters, config-directory
   lookup, command feedback, NeoForge metadata, and two lifecycle/interaction mixins.
 - `forge`: client-scoped Forge entrypoint, event adapters, config-directory lookup,

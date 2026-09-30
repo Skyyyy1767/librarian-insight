@@ -1,5 +1,6 @@
 plugins { id 'net.fabricmc.fabric-loom' }
 apply from: rootProject.file('gradle/loader.gradle')
+sourceSets.main.java.srcDir rootProject.file('fabric-quilt/src/main/java')
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${loader_version}"
@@ -10,7 +11,7 @@ loom {
         client {
             runDir 'run'
             generateRunConfig = true
-            displayName = 'Minecraft Client - Fabric 26.3'
+            displayName = 'Minecraft Client - Fabric 26.2'
             getAppendProjectPathToDisplayName().set(false)
         }
     }
